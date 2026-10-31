@@ -38,6 +38,8 @@ pub enum Mode {
     Screen,
     Color,
     Rainbow,
+    /// Follows the computer's audio output.
+    Sound,
 }
 
 /// Where LED 1 (the end wired to the controller) sits, seen from the front of the screen.
@@ -81,6 +83,12 @@ pub struct Config {
     /// Serial port path or name; empty picks the first USB serial device.
     pub port: String,
     pub baud: u32,
+
+    /// Streaming services (keys of `foreground::STREAMING_SERVICES`) that switch Screen mode to
+    /// `auto_switch_mode` while their window is in front. They black out copy-protected video
+    /// whenever the screen is being captured.
+    pub auto_switch_services: Vec<String>,
+    pub auto_switch_mode: Mode,
 }
 
 impl Default for Config {
@@ -100,6 +108,8 @@ impl Default for Config {
             direction: Direction::Clockwise,
             port: String::new(),
             baud: 115_200,
+            auto_switch_services: crate::foreground::STREAMING_SERVICES.iter().map(|s| s.key.to_string()).collect(),
+            auto_switch_mode: Mode::Sound,
         }
     }
 }

@@ -20,21 +20,46 @@ export function saveConfig(config) {
   }, 50);
 }
 
+/** The mode actually shown: Screen gives way to the auto-switch mode while a listed app is in front. */
+export const effectiveMode = (config, status) =>
+  config.mode === "screen" && status.autoSwitchedFor ? config.autoSwitchMode : config.mode;
+
+const MODE_NAMES = { screen: "Screen", color: "Color", rainbow: "Rainbow", sound: "Sound" };
+
 /** Dot color and one-line text describing the current state. */
 export function summarize(config, status) {
   const leds = `${ledCount(config)} LEDs`;
   if (status.linkError) return { tone: "orange", text: status.linkError };
   if (!status.port) return { tone: "gray", text: "Connecting…" };
   if (!config.enabled) return { tone: "gray", text: `Off · ${leds}` };
-  if (config.mode === "screen") {
+
+  const mode = effectiveMode(config, status);
+  if (mode === "screen") {
     const capture = status.capture;
     if (capture.state === "needsPermission") {
-      return { tone: "orange", text: "Needs Screen Recording permission", needsPermission: true };
+      return { tone: "orange", text: "Needs Screen Recording permission", needsPermission: "screen" };
     }
     if (capture.state === "failed") return { tone: "orange", text: `Screen capture: ${capture.message}` };
     if (capture.state !== "running") return { tone: "yellow", text: "Starting screen capture…" };
   }
+  if (mode === "sound") {
+    const audio = status.audio;
+    if (audio.state === "needsPermission") {
+      return { tone: "orange", text: "Needs System Audio Recording permission", needsPermission: "audio" };
+    }
+    if (audio.state === "failed") return { tone: "orange", text: `Sound: ${audio.message}` };
+    if (audio.state !== "running") return { tone: "yellow", text: "Starting sound capture…" };
+  }
+  if (status.autoSwitchedFor) {
+    return { tone: "green", text: `${MODE_NAMES[mode]} mode while ${status.autoSwitchedFor} is in front` };
+  }
   return { tone: "green", text: `Connected to ${status.port} · ${leds}` };
+}
+
+/** Where to switch on the missing permission (both live in the same Privacy pane on macOS). */
+export function permissionHint(kind) {
+  const list = kind === "audio" ? "System Audio Recording Only" : "Screen & System Audio Recording";
+  return `Switch Ambilight on under ${list}. If it isn't listed, click + and add it from Applications.`;
 }
 
 export const toHex = ({ r, g, b }) =>

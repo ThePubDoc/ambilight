@@ -55,6 +55,22 @@
       </div>
     </div>
 
+    <h2>Streaming video</h2>
+    <div class="group">
+      <div class="row">
+        <div class="label">Streaming services black out their video while the screen is captured. While one of these is the window in front (in any browser or app), Screen mode switches to another mode. Other sites, like YouTube, keep screen sync.</div>
+      </div>
+      <div class="row">
+        <label for="autoSwitchMode">Switch to</label>
+        <select id="autoSwitchMode">
+          <option value="sound">Sound (follows the audio)</option>
+          <option value="color">Color</option>
+          <option value="rainbow">Rainbow</option>
+        </select>
+      </div>
+      <div id="services"></div>
+    </div>
+
     <h2>Connection</h2>
     <div class="group">
       <div class="row">
@@ -73,7 +89,7 @@
         <button class="button" id="reconnect">Reconnect</button>
       </div>
       <div class="row hidden" id="permissionRow">
-        <div class="label">Screen Recording permission<small>Switch Ambilight on in Screen &amp; System Audio Recording. If it isn't listed, click + and add it from Applications. No restart needed.</small></div>
+        <div class="label"><span id="permissionTitle"></span><small id="permissionHint"></small></div>
         <button class="button" id="permission">Open Settings</button>
       </div>
     </div>

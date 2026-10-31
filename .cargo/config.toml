@@ -1,6 +1,6 @@
 [env]
-# ScreenCaptureKit's Swift bridge needs no back-deployment shims from macOS 14 on.
-MACOSX_DEPLOYMENT_TARGET = "14.0"
+# ScreenCaptureKit's Swift bridge needs no back-deployment shims from macOS 14 on; system-audio taps need 14.2.
+MACOSX_DEPLOYMENT_TARGET = "14.2"
 
 # The screencapturekit build script only adds Xcode's Swift library path; this covers
 # machines that have just the Command Line Tools. Harmless when Xcode is installed.

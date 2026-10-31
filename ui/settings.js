@@ -1,4 +1,4 @@
-import { $, fromHex, invoke, ledCount, listen, saveConfig, summarize, toHex } from "./common.js";
+import { $, fromHex, invoke, ledCount, listen, permissionHint, saveConfig, summarize, toHex } from "./common.js";
 
 const BAUD_RATES = [115200, 230400, 460800, 500000, 921600, 1000000, 2000000];
 const SIDES = ["top", "right", "bottom", "left"];
@@ -6,6 +6,7 @@ const SIDES = ["top", "right", "bottom", "left"];
 let config;
 let status;
 let ports = [];
+let services = [];
 
 function update(patch) {
   config = { ...config, ...patch };
@@ -27,6 +28,8 @@ function render() {
   $("color").value = toHex(config.color);
   renderPorts();
   $("baud").value = String(config.baud);
+  for (const box of $("services").querySelectorAll("input")) box.checked = config.autoSwitchServices.includes(box.value);
+  $("autoSwitchMode").value = config.autoSwitchMode;
   renderStatus();
   drawPreview();
 }
@@ -46,6 +49,8 @@ function renderStatus() {
   $("dot").className = `dot ${s.tone}`;
   $("statusText").textContent = s.text;
   $("permissionRow").classList.toggle("hidden", !s.needsPermission);
+  $("permissionTitle").textContent = s.needsPermission === "audio" ? "System Audio Recording permission" : "Screen Recording permission";
+  $("permissionHint").textContent = `${permissionHint(s.needsPermission)} No restart needed.`;
 }
 
 /** Screen outline with one dot per LED, hue following wiring order, LED 1 ringed. */
@@ -116,8 +121,32 @@ function buildSteppers() {
   }
 }
 
+function buildServices() {
+  $("services").replaceChildren(
+    ...services.map((service) => {
+      const row = document.createElement("div");
+      row.className = "row";
+      const id = `service-${service.key}`;
+      const label = Object.assign(document.createElement("label"), { textContent: service.label, htmlFor: id });
+      const sw = document.createElement("label");
+      sw.className = "switch";
+      const box = Object.assign(document.createElement("input"), { type: "checkbox", id, value: service.key });
+      box.addEventListener("change", () => {
+        const keys = new Set(config.autoSwitchServices);
+        if (box.checked) keys.add(service.key); else keys.delete(service.key);
+        update({ autoSwitchServices: [...keys] });
+      });
+      sw.append(box, document.createElement("span"));
+      row.append(label, sw);
+      return row;
+    }),
+  );
+}
+
 function bind() {
   buildSteppers();
+  buildServices();
+  $("autoSwitchMode").addEventListener("change", (e) => update({ autoSwitchMode: e.target.value }));
   $("baud").replaceChildren(...BAUD_RATES.map((b) => new Option(`${b.toLocaleString()} baud`, String(b))));
   $("start").addEventListener("change", (e) => update({ start: e.target.value }));
   $("direction").addEventListener("change", (e) => update({ direction: e.target.value }));
@@ -145,6 +174,7 @@ async function refreshPorts() {
 async function init() {
   const state = await invoke("get_state");
   ({ config, status } = state);
+  services = await invoke("streaming_services");
   $("footer").textContent = `Ambilight ${state.version} · MIT License · github.com/ThePubDoc/ambilight`;
   bind();
   ports = await invoke("list_ports");

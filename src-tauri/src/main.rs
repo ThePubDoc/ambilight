@@ -4,6 +4,7 @@
 mod store;
 mod windows;
 
+use ambilight_core::foreground::{StreamingService, STREAMING_SERVICES};
 use ambilight_core::layout::{self, Side};
 use ambilight_core::serial::{self, PortInfo};
 use ambilight_core::{capture, Config, Engine, Status};
@@ -71,6 +72,12 @@ fn layout_preview(config: Config) -> Vec<Dot> {
             }
         })
         .collect()
+}
+
+/// Streaming services that switch Screen mode off while their window is in front.
+#[tauri::command]
+fn streaming_services() -> &'static [StreamingService] {
+    STREAMING_SERVICES
 }
 
 #[tauri::command]
@@ -161,6 +168,7 @@ fn main() {
             identify,
             reconnect,
             layout_preview,
+            streaming_services,
             list_ports,
             open_permission_settings,
             open_settings,

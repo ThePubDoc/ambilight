@@ -7,5 +7,7 @@
 	<true/>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Ambilight reads the edges of your screen to color the LED strip behind it.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>In Sound mode, Ambilight follows how loud the music or movie is. Audio is never recorded or stored.</string>
 </dict>
 </plist>

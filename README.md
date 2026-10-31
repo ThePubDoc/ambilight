@@ -5,7 +5,8 @@ Screen-synced lighting for your monitor. Ambilight reads the edges of your scree
 <p align="center"><img src="icons/app-icon.png" width="128" alt="Ambilight icon"></p>
 
 - **Lives in the menu bar / system tray.** One click opens a small panel: on/off, mode, brightness. No browser, no local web server.
-- **Three modes.** **Screen** follows what's on the display, **Color** holds one color (ten presets or any custom color), **Rainbow** cycles slowly.
+- **Four modes.** **Screen** follows what's on the display, **Sound** follows the music or movie you're playing, **Color** holds one color (ten presets or any custom color), **Rainbow** cycles slowly.
+- **Works with Netflix and other streaming.** Streaming sites black out their video while the screen is captured, so when a Netflix, Prime Video, Disney+ (and others) window is in front, Ambilight switches to Sound mode by itself: the video stays visible and the lights follow the soundtrack. YouTube and everything else keep screen sync. See [Streaming video](#streaming-video).
 - **Fits any strip layout.** Set LEDs per side, which corner the strip starts at and which way it runs. A live preview shows the result, and **Identify LEDs** lights each side in its own color so you can check it on the real strip.
 - **Ignores black bars.** Letterboxed and pillarboxed videos use the picture area, not the bars.
 - **Recovers by itself.** Reconnects when the USB cable is unplugged and plugged back in, restarts capture after the computer sleeps, and turns the strip off when the app quits (and, on macOS, while the display sleeps).
@@ -23,7 +24,7 @@ Wiring: controller data pin → strip **DIN** (the end where the printed arrows 
 
 Download the latest installer from [Releases](https://github.com/ThePubDoc/ambilight/releases):
 
-- **macOS 14 or later**: `Ambilight_<version>_aarch64.dmg` for Apple silicon, `Ambilight_<version>_x64.dmg` for Intel Macs. Open the DMG and drag Ambilight to Applications.
+- **macOS 14.2 or later**: `Ambilight_<version>_aarch64.dmg` for Apple silicon, `Ambilight_<version>_x64.dmg` for Intel Macs. Open the DMG and drag Ambilight to Applications.
 - **Windows 10/11**: `Ambilight_<version>_x64-setup.exe`.
 
 ### First launch on macOS
@@ -32,8 +33,9 @@ The app isn't notarized by Apple, so:
 
 1. **Open it:** the first time, right-click Ambilight in Applications and choose **Open**, then **Open** again. If macOS refuses, go to **System Settings → Privacy & Security** and click **Open Anyway**.
 2. **Allow screen recording:** open **System Settings → Privacy & Security → Screen & System Audio Recording**. If Ambilight is listed, switch it on. If it isn't (common for apps without an Apple Developer ID), click **+** and add it from Applications. Ambilight notices within a few seconds; no restart needed.
+3. **For Sound mode, allow system audio:** the first time Sound mode runs, macOS asks whether Ambilight may record system audio; click **Allow**. If you missed it, the same settings page has a **System Audio Recording Only** list where you can switch Ambilight on (or add it with **+**). Ambilight only measures how loud the audio is; it never records or stores it, and it doesn't use the microphone.
 
-Updating to a new version may require switching the permission on again.
+Updating to a new version may require switching the permissions on again.
 
 ### First launch on Windows
 
@@ -51,6 +53,16 @@ Windows SmartScreen may warn about an unknown publisher: click **More info → R
 
 Settings are saved as JSON in `~/Library/Application Support/com.thepubdoc.ambilight/` on macOS and `%APPDATA%\com.thepubdoc.ambilight\` on Windows.
 
+## Streaming video
+
+Netflix, Prime Video, Disney+ and other streaming services protect their video: while any app captures the screen, the browser shows black instead. No screen-capture ambilight can read that picture, so Ambilight steps aside instead.
+
+It recognises the service from the title of the window in front (browsers title their windows after the active tab, e.g. "Netflix" or "… | Prime Video"). While such a window is in front, Ambilight stops capturing the screen, so the video plays normally, and shows **Sound** mode instead: the lights follow the soundtrack, pulsing with music and flashing on loud moments. Switch to another tab or app and screen sync resumes within half a second. This works in any browser and in the services' own apps.
+
+In **Settings → Streaming video** you can choose another fallback (**Color** or **Rainbow**) and turn individual services off. Supported: Netflix, Prime Video, Disney+, JioHotstar/JioCinema, Apple TV+, Hulu, Paramount+, Peacock, SonyLIV, ZEE5 and Crunchyroll.
+
+Sound mode also works on its own: pick **Sound** in the panel to make the strip follow music.
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
@@ -62,6 +74,8 @@ Settings are saved as JSON in `~/Library/Application Support/com.thepubdoc.ambil
 | Colors flicker or look random | Baud rate doesn't match the firmware, or the controller and supply don't share a ground. |
 | Wrong colors (red shows as green…) | The firmware's color order doesn't match the strip. Fix it in the firmware sketch (e.g. `GRB` for WS2812B). |
 | macOS: stuck on **Needs Screen Recording permission** | Add Ambilight with **+** in Screen & System Audio Recording (see above). |
+| Netflix (or another streaming site) goes black | Check the service is switched on under **Settings → Streaming video**. If its tab title doesn't contain the service's name, the window can't be recognised; please open an issue with the title. |
+| Sound mode only shows a dim glow | Nothing is playing, or (macOS) Ambilight isn't allowed under **System Audio Recording Only**. |
 
 Logs are written to `~/Library/Logs/com.thepubdoc.ambilight/ambilight.log` on macOS and `%LOCALAPPDATA%\com.thepubdoc.ambilight\logs\ambilight.log` on Windows. Please attach the log when you open an issue.
 
@@ -89,8 +103,11 @@ core/            Platform-independent engine (Rust library, unit-tested)
   src/frame.rs     Edge sampling and black-bar detection
   src/adalight.rs  Adalight protocol encoding
   src/serial.rs    USB serial port discovery and opening
-  src/engine.rs    50 Hz loop: capture → smoothing → serial; reconnects and sleep handling
+  src/engine.rs    50 Hz loop: capture → smoothing → serial; reconnects, sleep handling, auto-switch
   src/capture/     Screen capture: ScreenCaptureKit (macOS), DXGI Desktop Duplication (Windows)
+  src/audio/       System-audio loudness: Core Audio process tap (macOS), WASAPI loopback (Windows)
+  src/sound.rs     Sound mode visuals
+  src/foreground.rs  Front window title, for the streaming auto-switch
 src-tauri/       Desktop app: tray icon, windows, settings storage, start at login
 ui/              Popover and settings pages (plain HTML/CSS/JS, no build step)
 tools/           Icon generation and local macOS signing helpers

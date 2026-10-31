@@ -1,4 +1,4 @@
-import { $, invoke, listen, saveConfig, summarize } from "./common.js";
+import { $, invoke, listen, permissionHint, saveConfig, summarize } from "./common.js";
 
 const SWATCHES = [
   { r: 1, g: 0.55, b: 0.2 }, // warm white
@@ -46,6 +46,7 @@ function renderStatus() {
   $("dot").className = `dot ${s.tone}`;
   $("statusText").textContent = s.text;
   $("permission").classList.toggle("hidden", !s.needsPermission);
+  $("permissionHint").textContent = permissionHint(s.needsPermission);
   fit();
 }
 

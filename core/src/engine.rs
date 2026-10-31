@@ -1,11 +1,14 @@
-//! The engine thread: owns the serial link and the screen capture, and pushes an
+//! The engine thread: owns the serial link, screen capture and audio capture, and pushes an
 //! Adalight frame to the strip 50 times a second.
 
 use crate::adalight;
+use crate::audio::{AudioError, AudioSink, Controller, ControllerState};
 use crate::capture::{self, Backend, CaptureError, FrameSink};
 use crate::config::{Config, Mode, Rgb};
+use crate::foreground::{self, Foreground};
 use crate::layout::{self, Region, Side};
 use crate::serial::{self, LinkError};
+use crate::sound::SoundVisualizer;
 use parking_lot::Mutex;
 use serde::Serialize;
 use serialport::SerialPort;
@@ -19,6 +22,7 @@ const RECONNECT_EVERY: Duration = Duration::from_secs(2);
 const CAPTURE_RETRY_EVERY: Duration = Duration::from_secs(3);
 /// A wall-clock jump this large between ticks means the machine was asleep.
 const SLEEP_GAP: Duration = Duration::from_secs(5);
+const FOREGROUND_CHECK_EVERY: Duration = Duration::from_millis(500);
 /// Screen colors look washed out on LEDs without a little gamma.
 const SCREEN_GAMMA: f32 = 1.5;
 
@@ -39,6 +43,10 @@ pub struct Status {
     pub port: Option<String>,
     pub link_error: Option<String>,
     pub capture: CaptureState,
+    /// System-audio capture for Sound mode.
+    pub audio: CaptureState,
+    /// Streaming service whose window being in front switched Screen mode to `auto_switch_mode`.
+    pub auto_switched_for: Option<String>,
 }
 
 enum Command {
@@ -111,6 +119,16 @@ struct Worker {
     capturing: bool,
     next_capture: Instant,
 
+    audio_sink: Arc<AudioSink>,
+    audio: Controller,
+    /// Whether the engine has asked the audio controller to run.
+    audio_requested: bool,
+    next_audio: Instant,
+    visualizer: SoundVisualizer,
+
+    auto_app: Option<&'static str>,
+    next_foreground_check: Instant,
+
     display_asleep: bool,
     next_display_check: Instant,
     last_wall: SystemTime,
@@ -142,6 +160,13 @@ impl Worker {
             backend: capture::backend(),
             capturing: false,
             next_capture: now,
+            audio_sink: Arc::new(AudioSink::default()),
+            audio: Controller::new(),
+            audio_requested: false,
+            next_audio: now,
+            visualizer: SoundVisualizer::default(),
+            auto_app: None,
+            next_foreground_check: now,
             display_asleep: false,
             next_display_check: now,
             last_wall: SystemTime::now(),
@@ -164,6 +189,7 @@ impl Worker {
                     Command::Shutdown(ack) => {
                         self.blackout();
                         self.stop_capture();
+                        self.stop_audio();
                         self.port = None;
                         let _ = ack.send(());
                         return;
@@ -171,7 +197,9 @@ impl Worker {
                 }
             }
             self.watch_sleep();
+            self.watch_foreground();
             self.update_capture();
+            self.update_audio();
             self.ensure_port();
             if self.port.is_some() && !self.display_asleep {
                 self.render();
@@ -200,6 +228,48 @@ impl Worker {
         self.next_connect = Instant::now();
         self.stop_capture();
         self.next_capture = Instant::now();
+        self.stop_audio();
+        self.next_audio = Instant::now();
+    }
+
+    /// The mode actually shown: Screen gives way to `auto_switch_mode` while a listed app is in front.
+    fn effective_mode(&self) -> Mode {
+        if self.config.mode == Mode::Screen && self.auto_app.is_some() {
+            self.config.auto_switch_mode
+        } else {
+            self.config.mode
+        }
+    }
+
+    fn watch_foreground(&mut self) {
+        if self.config.mode != Mode::Screen || self.config.auto_switch_services.is_empty() {
+            if self.auto_app.is_some() {
+                self.set_auto_app(None);
+            }
+            return;
+        }
+        if Instant::now() < self.next_foreground_check {
+            return;
+        }
+        self.next_foreground_check = Instant::now() + FOREGROUND_CHECK_EVERY;
+        let app = match foreground::frontmost() {
+            // Adjusting Ambilight itself (popover, settings) keeps the current state.
+            Foreground::Ambilight => return,
+            Foreground::Window(Some(title)) => {
+                foreground::matching(&self.config.auto_switch_services, &title).map(|s| s.label)
+            }
+            Foreground::Window(None) => None,
+        };
+        if app != self.auto_app {
+            self.set_auto_app(app);
+        }
+    }
+
+    fn set_auto_app(&mut self, app: Option<&'static str>) {
+        log::info!("auto switch: {}", app.unwrap_or("off"));
+        self.auto_app = app;
+        self.status.auto_switched_for = app.map(str::to_string);
+        self.publish();
     }
 
     fn watch_sleep(&mut self) {
@@ -228,7 +298,7 @@ impl Worker {
     }
 
     fn update_capture(&mut self) {
-        let wanted = self.config.enabled && self.config.mode == Mode::Screen && !self.display_asleep;
+        let wanted = self.config.enabled && self.effective_mode() == Mode::Screen && !self.display_asleep;
         if self.capturing {
             if let Some(err) = self.backend.failure() {
                 log::warn!("capture stopped: {err}");
@@ -274,6 +344,52 @@ impl Worker {
         self.sink.clear();
     }
 
+    fn update_audio(&mut self) {
+        let wanted = self.config.enabled && self.effective_mode() == Mode::Sound && !self.display_asleep;
+        if !wanted {
+            if self.audio_requested {
+                self.stop_audio();
+            }
+            self.set_audio(CaptureState::Stopped);
+            return;
+        }
+        match self.audio.state() {
+            ControllerState::Running => self.set_audio(CaptureState::Running),
+            // Still starting (possibly waiting on the macOS permission prompt): keep the LEDs going.
+            ControllerState::Starting => {}
+            ControllerState::Failed(e) => {
+                if self.audio_requested {
+                    self.audio_requested = false;
+                    self.next_audio = Instant::now() + CAPTURE_RETRY_EVERY;
+                    self.set_audio(match e {
+                        AudioError::PermissionDenied => CaptureState::NeedsPermission,
+                        AudioError::Unavailable(msg) => CaptureState::Failed(msg),
+                    });
+                } else if Instant::now() >= self.next_audio {
+                    self.request_audio();
+                }
+            }
+            ControllerState::Stopped => {
+                if !self.audio_requested && Instant::now() >= self.next_audio {
+                    self.request_audio();
+                }
+            }
+        }
+    }
+
+    fn request_audio(&mut self) {
+        self.audio_requested = true;
+        self.audio.start(self.audio_sink.clone());
+    }
+
+    fn stop_audio(&mut self) {
+        if self.audio_requested {
+            self.audio.stop();
+            self.audio_requested = false;
+        }
+        self.audio_sink.clear();
+    }
+
     fn ensure_port(&mut self) {
         if self.port.is_some() || Instant::now() < self.next_connect {
             return;
@@ -310,7 +426,7 @@ impl Worker {
         } else if !self.config.enabled {
             vec![Rgb::BLACK; n]
         } else {
-            match self.config.mode {
+            match self.effective_mode() {
                 Mode::Screen => {
                     gamma = SCREEN_GAMMA;
                     // Hold the last colors until capture delivers frames.
@@ -320,6 +436,12 @@ impl Worker {
                 Mode::Rainbow => {
                     let t = self.started.elapsed().as_secs_f32() * 0.08;
                     (0..n).map(|i| Rgb::from_hue(i as f32 / n as f32 + t)).collect()
+                }
+                Mode::Sound => {
+                    self.visualizer.update(self.audio_sink.take(), TICK.as_secs_f32());
+                    // The visualizer already shapes attack and release; skip extra smoothing.
+                    self.current = self.visualizer.render(n);
+                    self.current.clone()
                 }
             }
         };
@@ -378,6 +500,14 @@ impl Worker {
         if self.status.port != port || self.status.link_error != error {
             self.status.port = port;
             self.status.link_error = error;
+            self.publish();
+        }
+    }
+
+    fn set_audio(&mut self, state: CaptureState) {
+        if self.status.audio != state {
+            log::info!("audio: {state:?}");
+            self.status.audio = state;
             self.publish();
         }
     }
