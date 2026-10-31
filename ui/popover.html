@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Ambilight</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="popover.js"></script>
+</head>
+<body class="popover">
+  <main id="main">
+    <header>
+      <h1>Ambilight</h1>
+      <label class="switch" title="Turn the lights on or off">
+        <input type="checkbox" id="enabled" aria-label="Lights on">
+        <span></span>
+      </label>
+    </header>
+
+    <div>
+      <div class="status"><span class="dot" id="dot"></span><span id="statusText">Connecting…</span></div>
+      <div class="hidden" id="permission" style="font-size: 12px; margin: 4px 0 0 14px">
+        <button class="link" id="permissionButton">Open Screen Recording settings</button>
+        <div class="secondary">If Ambilight isn't listed, click + and add it from Applications.</div>
+      </div>
+    </div>
+
+    <div class="segmented" id="mode" role="radiogroup" aria-label="Mode">
+      <button data-mode="screen">Screen</button>
+      <button data-mode="color">Color</button>
+      <button data-mode="rainbow">Rainbow</button>
+    </div>
+
+    <div class="swatches hidden" id="swatches"></div>
+
+    <div class="slider-row">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v1.5M12 19.5V21M3 12h1.5M19.5 12H21"/></svg>
+      <input type="range" id="brightness" min="5" max="100" aria-label="Brightness">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/></svg>
+    </div>
+
+    <hr>
+
+    <footer>
+      <button class="plain" id="settings">Settings…</button>
+      <button class="plain" id="quit">Quit</button>
+    </footer>
+  </main>
+</body>
+</html>

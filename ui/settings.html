@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Ambilight Settings</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="settings.js"></script>
+</head>
+<body class="settings">
+  <main>
+    <h2>LED layout</h2>
+    <div class="group">
+      <div class="preview"><canvas id="preview"></canvas></div>
+      <div class="legend">Seen from the front. White ring is LED 1 (the controller end); colors run in wiring order.</div>
+      <div class="row"><span class="label">Top</span><div class="stepper" data-side="top"></div></div>
+      <div class="row"><span class="label">Right</span><div class="stepper" data-side="right"></div></div>
+      <div class="row"><span class="label">Bottom</span><div class="stepper" data-side="bottom"></div></div>
+      <div class="row"><span class="label">Left</span><div class="stepper" data-side="left"></div></div>
+      <div class="row"><span class="label">Total</span><span class="value" id="total"></span></div>
+      <div class="row">
+        <label for="start">First LED (controller end)</label>
+        <select id="start">
+          <option value="topLeft">Top left</option>
+          <option value="topRight">Top right</option>
+          <option value="bottomRight">Bottom right</option>
+          <option value="bottomLeft">Bottom left</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="direction">Direction, seen from the front</label>
+        <select id="direction">
+          <option value="clockwise">Clockwise</option>
+          <option value="anticlockwise">Anticlockwise</option>
+        </select>
+      </div>
+      <div class="row">
+        <div class="label">Check on the strip<small>For 6 seconds: LED 1 white, right red, top green, left blue, bottom yellow.</small></div>
+        <button class="button" id="identify">Identify LEDs</button>
+      </div>
+    </div>
+
+    <h2>Picture</h2>
+    <div class="group">
+      <div class="row smoothing">
+        <div class="label">Smoothing<small>Higher is calmer, lower reacts faster.</small></div>
+        <div class="controls"><input type="range" id="smoothing" min="0" max="500" step="10" aria-label="Smoothing"><span class="value" id="smoothingValue"></span></div>
+      </div>
+      <div class="row">
+        <div class="label">Ignore black bars<small>Uses the picture area of letterboxed videos.</small></div>
+        <label class="switch"><input type="checkbox" id="blackBars" aria-label="Ignore black bars"><span></span></label>
+      </div>
+      <div class="row">
+        <label for="color">Color for Color mode</label>
+        <input type="color" id="color">
+      </div>
+    </div>
+
+    <h2>Connection</h2>
+    <div class="group">
+      <div class="row">
+        <label for="port">USB port</label>
+        <div class="controls">
+          <select id="port"></select>
+          <button class="plain" id="refresh" title="Refresh ports" aria-label="Refresh ports">↻</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="label">Speed<small>Must match the controller's firmware.</small></div>
+        <select id="baud"></select>
+      </div>
+      <div class="row">
+        <div class="label" style="display:flex; align-items:baseline; gap:6px"><span class="dot" id="dot"></span><span id="statusText"></span></div>
+        <button class="button" id="reconnect">Reconnect</button>
+      </div>
+      <div class="row hidden" id="permissionRow">
+        <div class="label">Screen Recording permission<small>Switch Ambilight on in Screen &amp; System Audio Recording. If it isn't listed, click + and add it from Applications. No restart needed.</small></div>
+        <button class="button" id="permission">Open Settings</button>
+      </div>
+    </div>
+
+    <h2>General</h2>
+    <div class="group">
+      <div class="row">
+        <label for="autostart">Start at login</label>
+        <label class="switch"><input type="checkbox" id="autostart"><span></span></label>
+      </div>
+    </div>
+
+    <p class="footer" id="footer"></p>
+  </main>
+</body>
+</html>
