@@ -247,6 +247,7 @@ impl Worker {
             self.current = vec![Rgb::BLACK; self.regions.len()];
         }
         self.sink.configure(self.regions.clone(), c.ignore_black_bars);
+        self.visualizer.set_sensitivity(c.beat_sensitivity);
         self.config = c;
         self.next_schedule_check = Instant::now();
         if link_changed {
@@ -520,10 +521,9 @@ impl Worker {
                 Mode::ScreenSound => {
                     gamma = SCREEN_GAMMA;
                     self.visualizer.update(self.audio_sink.take(), dt);
-                    // Screen colors, breathing with the soundtrack: dimmer in quiet passages,
-                    // full on loud ones, with an extra kick on bass hits.
-                    let pulse = (0.35 + 0.65 * self.visualizer.level() + 0.3 * self.visualizer.punch()).min(1.0);
-                    self.screen_colors().into_iter().map(|c| c.scale(pulse)).collect()
+                    // Screen colors at a steady brightness, boosted on each beat.
+                    let factor = self.visualizer.mix_brightness();
+                    self.screen_colors().into_iter().map(|c| c.scale(factor)).collect()
                 }
                 Mode::Sound => {
                     self.visualizer.update(self.audio_sink.take(), dt);

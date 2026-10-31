@@ -73,6 +73,16 @@ In **Settings → Streaming video** you can choose another fallback (**Color** o
 
 Sound mode also works on its own: pick **Sound** in the panel to make the strip follow music.
 
+## Music
+
+**Sound** and **Mix** modes follow the song's tempo: after a few seconds of music they pulse on the beat and ignore sounds between beats, like vocals and guitars. Between beats the strip glows with the music's loudness, and its color follows the sound: warm for bass-heavy music, cool for bright music. Choose how often it pulses under **Settings → Picture → Beat pulses**:
+
+- **Every other beat (calm)**, the default: one pulse per kick on most pop and dance music. Songs slower than 100 BPM pulse on every beat.
+- **Every beat**.
+- **Every drum hit**: no tempo tracking, pulses on every kick and snare.
+
+Music without a clear beat (ambient, speech) just glows.
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
@@ -85,7 +95,8 @@ Sound mode also works on its own: pick **Sound** in the panel to make the strip 
 | Wrong colors (red shows as green…) | The firmware's color order doesn't match the strip. Fix it in the firmware sketch (e.g. `GRB` for WS2812B). |
 | macOS: stuck on **Needs Screen Recording permission** | Add Ambilight with **+** in Screen & System Audio Recording (see above). |
 | Netflix (or another streaming site) goes black | Check the service is switched on under **Settings → Streaming video**. If its tab title doesn't contain the service's name, the window can't be recognised; please open an issue with the title. |
-| Sound mode only shows a dim glow | Nothing is playing, or (macOS) Ambilight isn't allowed under **System Audio Recording Only**. |
+| Sound mode only shows a dim glow | Nothing is playing, or (macOS) Ambilight isn't allowed under **System Audio Recording Only**. The first few seconds of a song just glow while the tempo is found. |
+| Music pulses too often, or not often enough | Change **Settings → Picture → Beat pulses**. |
 | Bright scenes look dimmer than expected | The **Power** limit is doing its job. Raise it only if your adapter is rated higher. |
 | Shortcuts don't work | Another app already uses the same keys, or they're switched off under **Settings → Keyboard shortcuts**. |
 | WLED: connected but nothing changes | Check the address, and that WLED's LED count matches the layout. WLED returns to its own effect 2 seconds after Ambilight stops sending. |
@@ -122,7 +133,7 @@ core/            Platform-independent engine (Rust library, unit-tested)
   src/engine.rs    50 Hz loop: capture → smoothing → output; reconnects, sleep, schedule, auto-switch
   src/capture/     Screen capture: ScreenCaptureKit (macOS), DXGI Desktop Duplication (Windows)
   src/audio/       System-audio loudness: Core Audio process tap (macOS), WASAPI loopback (Windows)
-  src/sound.rs     Sound mode visuals
+  src/sound.rs     Sound and Mix visuals: beat tracking, loudness glow, color
   src/foreground.rs  Front window title, for the streaming auto-switch
 src-tauri/       Desktop app: tray icon, windows, settings storage, start at login, shortcuts, updater
 ui/              Popover and settings pages (plain HTML/CSS/JS, no build step)

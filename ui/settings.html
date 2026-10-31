@@ -62,6 +62,14 @@
         <div class="controls"><input type="range" id="edgeDepth" min="2" max="25" step="1" aria-label="Edge depth"><span class="value" id="edgeDepthValue"></span></div>
       </div>
       <div class="row">
+        <div class="label">Beat pulses<small>How often Sound and Mix modes pulse with music. The first two follow the song's tempo and ignore sounds between beats, like vocals and guitars.</small></div>
+        <select id="beatSensitivity">
+          <option value="low">Every other beat (calm)</option>
+          <option value="medium">Every beat</option>
+          <option value="high">Every drum hit</option>
+        </select>
+      </div>
+      <div class="row">
         <div class="label">Ignore black bars<small>Uses the picture area of letterboxed videos.</small></div>
         <label class="switch"><input type="checkbox" id="blackBars" aria-label="Ignore black bars"><span></span></label>
       </div>

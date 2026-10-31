@@ -92,6 +92,19 @@ impl Effect {
     }
 }
 
+/// How Sound and Mix modes flash on beats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Sensitivity {
+    /// Follow the tempo and pulse on every other beat (the stronger one, usually the kick).
+    #[default]
+    Low,
+    /// Follow the tempo and pulse on every beat.
+    Medium,
+    /// Pulse on every drum hit, without following the tempo.
+    High,
+}
+
 /// Where LED 1 (the end wired to the controller) sits, seen from the front of the screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -174,6 +187,8 @@ pub struct Config {
     pub white_balance: Rgb,
     /// Power supply rating in amps; the strip is kept below 90% of it. 0 disables the limit.
     pub max_current_a: f32,
+    /// How often Sound and Mix modes pulse with the beat.
+    pub beat_sensitivity: Sensitivity,
 
     pub top: u16,
     pub right: u16,
@@ -220,6 +235,7 @@ impl Default for Config {
             edge_depth: 8.0,
             white_balance: Rgb::WHITE,
             max_current_a: 0.0,
+            beat_sensitivity: Sensitivity::Low,
             top: 30,
             right: 15,
             bottom: 30,
