@@ -12,6 +12,7 @@ Screen-synced lighting for your monitor. Ambilight reads the edges of your scree
 - **Looks right on cheap strips.** White balance sliders fix a blue or green tint, and the edge depth slider sets how far into the picture each LED looks.
 - **Protects your power supply.** Enter the adapter's rating and bright scenes are dimmed just enough to stay under 90% of it.
 - **Keyboard shortcuts** work in any app: ⌃⌥L / Ctrl+Alt+L toggles the lights, ⌃⌥M / Ctrl+Alt+M cycles modes, ⌃⌥↑↓ / Ctrl+Alt+↑↓ changes brightness.
+- **App profiles.** Use a different mode while a particular app is in front, e.g. Mix for games or Sound for a music player.
 - **Night schedule.** Turn the lights off or dim them every night between two times.
 - **USB or Wi-Fi.** Drives an Adalight controller over USB, or a [WLED](https://kno.wled.ge) controller over the network.
 - **Multiple displays.** Pick which monitor to follow.
@@ -83,6 +84,16 @@ Sound mode also works on its own: pick **Sound** in the panel to make the strip 
 
 Music without a clear beat (ambient, speech) just glows.
 
+## App profiles
+
+Under **Settings → App profiles**, pick a running app and the mode to use while it's in front: any mode, or a specific effect. For example:
+
+- a game → **Mix**, so the screen's colors pulse with the soundtrack;
+- Spotify or YT Music → **Sound**;
+- a video-call app → **Color** in a soft warm white.
+
+Switch to the app and the mode changes within half a second; switch away and your normal mode returns. The popover shows which profile is active. The streaming switch still applies on top: a browser profile set to Screen or Mix steps aside for Netflix and friends.
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
@@ -134,7 +145,7 @@ core/            Platform-independent engine (Rust library, unit-tested)
   src/capture/     Screen capture: ScreenCaptureKit (macOS), DXGI Desktop Duplication (Windows)
   src/audio/       System-audio loudness: Core Audio process tap (macOS), WASAPI loopback (Windows)
   src/sound.rs     Sound and Mix visuals: beat tracking, loudness glow, color
-  src/foreground.rs  Front window title, for the streaming auto-switch
+  src/foreground.rs  Front app and window title: app profiles and the streaming switch
 src-tauri/       Desktop app: tray icon, windows, settings storage, start at login, shortcuts, updater
 ui/              Popover and settings pages (plain HTML/CSS/JS, no build step)
 tools/           Icon generation and local macOS signing helpers

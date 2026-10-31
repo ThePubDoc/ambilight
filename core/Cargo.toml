@@ -18,7 +18,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 screencapturekit = "11"
 objc2 = "0.6"
 objc2-foundation = "0.3"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "libc", "NSWorkspace", "NSRunningApplication"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "libc", "NSApplication", "NSWorkspace", "NSRunningApplication"] }
 objc2-core-audio = "0.3"
 objc2-core-audio-types = "0.3"
 objc2-core-foundation = "0.3"

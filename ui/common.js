@@ -20,16 +20,16 @@ export function saveConfig(config) {
   }, 50);
 }
 
-/** The mode actually shown: screen modes give way to the auto-switch mode while a service is in front. */
-export const effectiveMode = (config, status) =>
-  (config.mode === "screen" || config.mode === "screenSound") && status.autoSwitchedFor ? config.autoSwitchMode : config.mode;
+/** The mode actually shown, after app profiles and the streaming switch (reported by the engine). */
+export const effectiveMode = (config, status) => status.effectiveMode ?? config.mode;
+const effectiveEffect = (config, status) => status.effectiveEffect ?? config.effect;
 
 export const MODE_NAMES = { screen: "Screen", screenSound: "Screen + Sound", sound: "Sound", color: "Color", effect: "Effect" };
 export const EFFECT_NAMES = { rainbow: "Rainbow", spectrum: "Spectrum", breathing: "Breathing", candle: "Candle", aurora: "Aurora" };
 
 const capturesScreen = (mode) => mode === "screen" || mode === "screenSound";
-const needsAudio = (config, mode) =>
-  mode === "sound" || mode === "screenSound" || (mode === "effect" && config.effect === "spectrum");
+const needsAudio = (config, status, mode) =>
+  mode === "sound" || mode === "screenSound" || (mode === "effect" && effectiveEffect(config, status) === "spectrum");
 
 /** Dot color and one-line text describing the current state. */
 export function summarize(config, status) {
@@ -48,7 +48,7 @@ export function summarize(config, status) {
     if (capture.state === "failed") return { tone: "orange", text: `Screen capture: ${capture.message}` };
     if (capture.state !== "running") return { tone: "yellow", text: "Starting screen capture…" };
   }
-  if (needsAudio(config, mode)) {
+  if (needsAudio(config, status, mode)) {
     const audio = status.audio;
     if (audio.state === "needsPermission") {
       return { tone: "orange", text: "Needs System Audio Recording permission", needsPermission: "audio" };
@@ -56,9 +56,11 @@ export function summarize(config, status) {
     if (audio.state === "failed") return { tone: "orange", text: `Sound: ${audio.message}` };
     if (audio.state !== "running") return { tone: "yellow", text: "Starting sound capture…" };
   }
+  const name = mode === "effect" ? EFFECT_NAMES[effectiveEffect(config, status)] : MODE_NAMES[mode];
   if (status.autoSwitchedFor) {
-    return { tone: "green", text: `${MODE_NAMES[mode]} mode while ${status.autoSwitchedFor} is in front` };
+    return { tone: "green", text: `${name} while ${status.autoSwitchedFor} is in front` };
   }
+  if (status.profileFor) return { tone: "green", text: `${name} for ${status.profileFor}` };
   if (status.scheduled) return { tone: "green", text: `Dimmed for the night schedule · ${leds}` };
   return { tone: "green", text: `Connected to ${status.port} · ${leds}` };
 }

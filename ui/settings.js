@@ -1,4 +1,4 @@
-import { $, fromHex, invoke, isMac, ledCount, listen, permissionHint, saveConfig, summarize, toHex } from "./common.js";
+import { $, EFFECT_NAMES, fromHex, invoke, isMac, ledCount, listen, MODE_NAMES, permissionHint, saveConfig, summarize, toHex } from "./common.js";
 
 const BAUD_RATES = [115200, 230400, 460800, 500000, 921600, 1000000, 2000000];
 
@@ -8,6 +8,7 @@ let ports = [];
 let displays = [];
 let services = [];
 let available = null; // update info
+let apps = []; // running apps that can get a profile
 
 function update(patch) {
   config = { ...config, ...patch };
@@ -50,6 +51,7 @@ function render() {
     ? `Full white would draw about ${fullWhite} A; Ambilight keeps it under ${(config.maxCurrentA * 0.9).toFixed(1)} A.`
     : `Full white would draw about ${fullWhite} A at 100% brightness.`;
 
+  renderProfiles();
   $("autoSwitchMode").value = config.autoSwitchMode;
   for (const box of $("services").querySelectorAll("input")) box.checked = config.autoSwitchServices.includes(box.value);
 
@@ -70,6 +72,53 @@ function render() {
   $("autoUpdate").checked = config.autoUpdate;
   renderStatus();
   drawPreview();
+}
+
+/** Mode options for a profile: every mode, with Effect split into its effects. */
+const PROFILE_CHOICES = [
+  ...["screen", "screenSound", "sound", "color"].map((mode) => ({ value: mode, label: MODE_NAMES[mode], mode })),
+  ...Object.entries(EFFECT_NAMES).map(([effect, label]) => ({ value: `effect:${effect}`, label: `Effect: ${label}`, mode: "effect", effect })),
+];
+
+function renderProfiles() {
+  const list = $("profiles");
+  if (list.contains(document.activeElement)) return; // don't rebuild under the user's hand
+  list.replaceChildren(
+    ...config.appProfiles.map((profile, i) => {
+      const row = document.createElement("div");
+      row.className = "row";
+      const name = Object.assign(document.createElement("span"), { className: "label", textContent: profile.name });
+      const select = document.createElement("select");
+      select.setAttribute("aria-label", `Mode for ${profile.name}`);
+      select.replaceChildren(...PROFILE_CHOICES.map((c) => new Option(c.label, c.value)));
+      select.value = profile.mode === "effect" ? `effect:${profile.effect}` : profile.mode;
+      select.addEventListener("change", () => {
+        const choice = PROFILE_CHOICES.find((c) => c.value === select.value);
+        const profiles = config.appProfiles.map((p, j) =>
+          j === i ? { ...p, mode: choice.mode, effect: choice.effect ?? p.effect } : p);
+        update({ appProfiles: profiles });
+      });
+      const remove = Object.assign(document.createElement("button"), { className: "plain", textContent: "Remove" });
+      remove.addEventListener("click", () => update({ appProfiles: config.appProfiles.filter((_, j) => j !== i) }));
+      const controls = document.createElement("div");
+      controls.className = "controls";
+      controls.append(select, remove);
+      row.append(name, controls);
+      return row;
+    }),
+  );
+  renderAddApp();
+}
+
+function renderAddApp() {
+  const taken = new Set(config.appProfiles.map((p) => p.app.toLowerCase()));
+  const choices = apps.filter((a) => !taken.has(a.id.toLowerCase()));
+  const select = $("addApp");
+  select.replaceChildren(
+    choices.length ? new Option("Choose a running app…", "") : new Option("No other apps running", ""),
+    ...choices.map((a) => new Option(a.name, a.id)),
+  );
+  $("addProfile").disabled = !choices.length;
 }
 
 function renderDisplays() {
@@ -223,6 +272,14 @@ function bind() {
 
   $("autoSwitchMode").addEventListener("change", (e) => update({ autoSwitchMode: e.target.value }));
 
+  $("refreshApps").addEventListener("click", refreshApps);
+  $("addApp").addEventListener("focus", refreshApps);
+  $("addProfile").addEventListener("click", () => {
+    const app = apps.find((a) => a.id === $("addApp").value);
+    if (!app) return;
+    update({ appProfiles: [...config.appProfiles, { app: app.id, name: app.name, mode: "screenSound", effect: "rainbow" }] });
+  });
+
   const schedule = (patch) => update({ schedule: { ...config.schedule, ...patch } });
   $("scheduleOn").addEventListener("change", (e) => schedule({ enabled: e.target.checked }));
   $("scheduleFrom").addEventListener("change", (e) => e.target.value && schedule({ from: timeToMinutes(e.target.value) }));
@@ -269,6 +326,13 @@ function bind() {
   window.addEventListener("resize", drawPreview);
 }
 
+async function refreshApps() {
+  apps = await invoke("running_apps");
+  const selected = $("addApp").value;
+  renderAddApp();
+  $("addApp").value = selected;
+}
+
 async function refreshPorts() {
   ports = await invoke("list_ports");
   renderPorts();
@@ -280,6 +344,7 @@ async function init() {
   services = await invoke("streaming_services");
   displays = await invoke("list_displays");
   ports = await invoke("list_ports");
+  apps = await invoke("running_apps");
   $("footer").textContent = `Ambilight ${state.version} · MIT License · github.com/ThePubDoc/ambilight`;
   bind();
   $("autostart").checked = await invoke("get_autostart");

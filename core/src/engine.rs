@@ -48,8 +48,13 @@ pub struct Status {
     pub capture: CaptureState,
     /// System-audio capture for Sound, Screen + Sound and Spectrum.
     pub audio: CaptureState,
-    /// Streaming service whose window being in front switched Screen mode to `auto_switch_mode`.
+    /// Streaming service whose window being in front switched a screen mode to `auto_switch_mode`.
     pub auto_switched_for: Option<String>,
+    /// App whose profile applies right now.
+    pub profile_for: Option<String>,
+    /// The mode and effect actually shown (after app profiles and the streaming switch).
+    pub effective_mode: Mode,
+    pub effective_effect: Effect,
     /// The night schedule currently dims (or turns off) the lights.
     pub scheduled: bool,
 }
@@ -146,7 +151,11 @@ struct Worker {
     visualizer: SoundVisualizer,
     effects: Effects,
 
-    auto_app: Option<&'static str>,
+    /// Front app and window title, as last seen (Ambilight itself excluded).
+    front_app: Option<String>,
+    front_title: Option<String>,
+    mode: Mode,
+    effect: Effect,
     next_foreground_check: Instant,
     /// Brightness factor from the night schedule, when it applies.
     schedule_factor: Option<f32>,
@@ -190,7 +199,10 @@ impl Worker {
             next_audio: now,
             visualizer: SoundVisualizer::default(),
             effects: Effects::default(),
-            auto_app: None,
+            front_app: None,
+            front_title: None,
+            mode: Mode::Screen,
+            effect: Effect::Rainbow,
             next_foreground_check: now,
             schedule_factor: None,
             next_schedule_check: now,
@@ -249,6 +261,7 @@ impl Worker {
         self.sink.configure(self.regions.clone(), c.ignore_black_bars);
         self.visualizer.set_sensitivity(c.beat_sensitivity);
         self.config = c;
+        self.resolve();
         self.next_schedule_check = Instant::now();
         if link_changed {
             self.link = None;
@@ -270,13 +283,40 @@ impl Worker {
         self.next_audio = Instant::now();
     }
 
-    /// The mode actually shown: screen modes give way to `auto_switch_mode` while a streaming
-    /// service is in front.
+    /// The mode actually shown: the front app's profile, or the configured mode; screen modes
+    /// give way to `auto_switch_mode` while a streaming service is in front.
     fn effective_mode(&self) -> Mode {
-        if self.config.mode.captures_screen() && self.auto_app.is_some() {
-            self.config.auto_switch_mode
-        } else {
-            self.config.mode
+        self.mode
+    }
+
+    fn effective_effect(&self) -> Effect {
+        self.effect
+    }
+
+    /// Recomputes the effective mode from the config and the last seen front window.
+    fn resolve(&mut self) {
+        let (mode, effect, profile, streaming) =
+            foreground::resolve(&self.config, self.front_app.as_deref(), self.front_title.as_deref());
+        let profile = profile.map(str::to_string);
+        let streaming = streaming.map(str::to_string);
+        self.mode = mode;
+        self.effect = effect;
+        let s = &self.status;
+        if s.effective_mode != mode
+            || s.effective_effect != effect
+            || s.profile_for != profile
+            || s.auto_switched_for != streaming
+        {
+            log::info!(
+                "mode: {mode:?}{}{}",
+                profile.as_deref().map(|p| format!(" (profile for {p})")).unwrap_or_default(),
+                streaming.as_deref().map(|s| format!(" ({s} in front)")).unwrap_or_default()
+            );
+            self.status.effective_mode = mode;
+            self.status.effective_effect = effect;
+            self.status.profile_for = profile;
+            self.status.auto_switched_for = streaming;
+            self.publish();
         }
     }
 
@@ -328,9 +368,13 @@ impl Worker {
     }
 
     fn watch_foreground(&mut self) {
-        if !self.config.mode.captures_screen() || self.config.auto_switch_services.is_empty() {
-            if self.auto_app.is_some() {
-                self.set_auto_app(None);
+        let watching = !self.config.app_profiles.is_empty()
+            || (!self.config.auto_switch_services.is_empty() && self.config.mode.captures_screen());
+        if !watching {
+            if self.front_app.is_some() || self.front_title.is_some() {
+                self.front_app = None;
+                self.front_title = None;
+                self.resolve();
             }
             return;
         }
@@ -338,24 +382,17 @@ impl Worker {
             return;
         }
         self.next_foreground_check = Instant::now() + FOREGROUND_CHECK_EVERY;
-        let app = match foreground::frontmost() {
+        match foreground::frontmost() {
             // Adjusting Ambilight itself (popover, settings) keeps the current state.
-            Foreground::Ambilight => return,
-            Foreground::Window(Some(title)) => {
-                foreground::matching(&self.config.auto_switch_services, &title).map(|s| s.label)
+            Foreground::Ambilight => {}
+            Foreground::Window { app, title } => {
+                if app != self.front_app || title != self.front_title {
+                    self.front_app = app;
+                    self.front_title = title;
+                    self.resolve();
+                }
             }
-            Foreground::Window(None) => None,
-        };
-        if app != self.auto_app {
-            self.set_auto_app(app);
         }
-    }
-
-    fn set_auto_app(&mut self, app: Option<&'static str>) {
-        log::info!("auto switch: {}", app.unwrap_or("off"));
-        self.auto_app = app;
-        self.status.auto_switched_for = app.map(str::to_string);
-        self.publish();
     }
 
     fn update_capture(&mut self) {
@@ -407,7 +444,7 @@ impl Worker {
     fn wants_audio(&self) -> bool {
         match self.effective_mode() {
             Mode::Sound | Mode::ScreenSound => true,
-            Mode::Effect => self.config.effect.needs_audio(),
+            Mode::Effect => self.effective_effect().needs_audio(),
             Mode::Screen | Mode::Color => false,
         }
     }
@@ -532,12 +569,13 @@ impl Worker {
                 }
                 Mode::Color => vec![self.config.color; n],
                 Mode::Effect => {
-                    if self.config.effect.needs_audio() {
+                    let effect = self.effective_effect();
+                    if effect.needs_audio() {
                         self.visualizer.update(self.audio_sink.take(), dt);
                     }
-                    smooth = self.config.effect != Effect::Spectrum;
+                    smooth = effect != Effect::Spectrum;
                     let t = self.started.elapsed().as_secs_f32();
-                    self.effects.render(self.config.effect, &self.regions, t, dt, self.config.color, &self.visualizer)
+                    self.effects.render(effect, &self.regions, t, dt, self.config.color, &self.visualizer)
                 }
             }
         };

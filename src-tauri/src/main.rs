@@ -7,7 +7,7 @@ mod updates;
 mod windows;
 
 use ambilight_core::capture::DisplayInfo;
-use ambilight_core::foreground::{StreamingService, STREAMING_SERVICES};
+use ambilight_core::foreground::{self, RunningApp, StreamingService, STREAMING_SERVICES};
 use ambilight_core::layout::{self, Side};
 use ambilight_core::serial::{self, PortInfo};
 use ambilight_core::{capture, Config, Engine, Status};
@@ -121,6 +121,12 @@ fn streaming_services() -> &'static [StreamingService] {
     STREAMING_SERVICES
 }
 
+/// Apps that can get a profile: the ones running now with windows.
+#[tauri::command]
+fn running_apps() -> Vec<RunningApp> {
+    foreground::running_apps()
+}
+
 #[tauri::command]
 fn list_ports() -> Vec<PortInfo> {
     serial::available_ports()
@@ -219,6 +225,7 @@ fn main() {
             install_update,
             layout_preview,
             streaming_services,
+            running_apps,
             list_ports,
             open_permission_settings,
             open_settings,

@@ -92,6 +92,25 @@ impl Effect {
     }
 }
 
+/// A mode that applies while a particular app is in front.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AppProfile {
+    /// Bundle ID (macOS) or executable name (Windows).
+    pub app: String,
+    /// Display name.
+    pub name: String,
+    pub mode: Mode,
+    /// Used when `mode` is Effect.
+    pub effect: Effect,
+}
+
+impl Default for AppProfile {
+    fn default() -> Self {
+        AppProfile { app: String::new(), name: String::new(), mode: Mode::ScreenSound, effect: Effect::Rainbow }
+    }
+}
+
 /// How Sound and Mix modes flash on beats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -216,6 +235,8 @@ pub struct Config {
     /// whenever the screen is being captured.
     pub auto_switch_services: Vec<String>,
     pub auto_switch_mode: Mode,
+    /// Modes for particular apps, used while that app is in front.
+    pub app_profiles: Vec<AppProfile>,
 
     pub schedule: Schedule,
     pub shortcuts: bool,
@@ -251,6 +272,7 @@ impl Default for Config {
             wled_host: String::new(),
             auto_switch_services: crate::foreground::STREAMING_SERVICES.iter().map(|s| s.key.to_string()).collect(),
             auto_switch_mode: Mode::Sound,
+            app_profiles: Vec::new(),
             schedule: Schedule::default(),
             shortcuts: true,
             auto_update: true,
