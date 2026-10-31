@@ -1,6 +1,6 @@
 //! macOS capture through ScreenCaptureKit.
 
-use super::{Backend, CaptureError, FrameSink};
+use super::{Backend, CaptureError, DisplayInfo, FrameSink};
 use crate::frame::Frame;
 use parking_lot::Mutex;
 use screencapturekit::cm::{CMSampleBufferExt, SCFrameStatus};
@@ -18,6 +18,19 @@ extern "C" {
     fn CGRequestScreenCaptureAccess() -> bool;
     fn CGMainDisplayID() -> u32;
     fn CGDisplayIsAsleep(display: u32) -> i32;
+    fn CGGetActiveDisplayList(max: u32, displays: *mut u32, count: *mut u32) -> i32;
+    fn CGDisplayPixelsWide(display: u32) -> usize;
+    fn CGDisplayPixelsHigh(display: u32) -> usize;
+    fn CGDisplayIsBuiltin(display: u32) -> u32;
+}
+
+/// The display to capture: `requested` if it's connected, otherwise the main display.
+fn resolve(requested: u32) -> u32 {
+    if requested != 0 && displays().iter().any(|d| d.id == requested) {
+        requested
+    } else {
+        unsafe { CGMainDisplayID() }
+    }
 }
 
 extern "C" {
@@ -83,7 +96,7 @@ fn permission_error(e: &SCError) -> bool {
 }
 
 impl Backend for MacCapture {
-    fn start(&mut self, sink: Arc<FrameSink>) -> Result<(), CaptureError> {
+    fn start(&mut self, sink: Arc<FrameSink>, display: u32) -> Result<(), CaptureError> {
         self.stop();
         *self.failure.lock() = None;
 
@@ -108,11 +121,11 @@ impl Backend for MacCapture {
             }
         })?;
 
-        let main_id = unsafe { CGMainDisplayID() };
+        let target = resolve(display);
         let displays = content.displays();
         let display = displays
             .iter()
-            .find(|d| d.display_id() == main_id)
+            .find(|d| d.display_id() == target)
             .or_else(|| displays.first())
             .ok_or_else(|| CaptureError::Unavailable("No display found".into()))?;
 
@@ -169,6 +182,29 @@ pub fn open_permission_settings() {
         .spawn();
 }
 
-pub fn display_asleep() -> bool {
-    unsafe { CGDisplayIsAsleep(CGMainDisplayID()) != 0 }
+pub fn displays() -> Vec<DisplayInfo> {
+    let mut ids = [0u32; 16];
+    let mut count = 0u32;
+    if unsafe { CGGetActiveDisplayList(ids.len() as u32, ids.as_mut_ptr(), &mut count) } != 0 {
+        return Vec::new();
+    }
+    let main = unsafe { CGMainDisplayID() };
+    let mut external = 0;
+    ids[..count as usize]
+        .iter()
+        .map(|&id| {
+            let (w, h) = unsafe { (CGDisplayPixelsWide(id), CGDisplayPixelsHigh(id)) };
+            let name = if unsafe { CGDisplayIsBuiltin(id) } != 0 {
+                "Built-in display".to_string()
+            } else {
+                external += 1;
+                format!("External display {external}")
+            };
+            DisplayInfo { id, label: format!("{name} ({w} × {h})"), main: id == main }
+        })
+        .collect()
+}
+
+pub fn display_asleep(display: u32) -> bool {
+    unsafe { CGDisplayIsAsleep(resolve(display)) != 0 }
 }

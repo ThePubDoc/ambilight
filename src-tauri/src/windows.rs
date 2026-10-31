@@ -5,7 +5,7 @@ use tauri_plugin_positioner::{Position, WindowExt};
 
 const POPOVER: &str = "popover";
 const SETTINGS: &str = "settings";
-const POPOVER_WIDTH: f64 = 300.0;
+const POPOVER_WIDTH: f64 = 330.0;
 
 #[cfg(target_os = "macos")]
 const TRAY_POSITION: Position = Position::TrayCenter;

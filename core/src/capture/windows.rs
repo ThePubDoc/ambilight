@@ -3,7 +3,7 @@
 //! Each new desktop image is copied into a mipmapped texture on the GPU, the GPU builds the
 //! mip chain, and only a small mip level (~256–512 px wide) is read back to the CPU.
 
-use super::{Backend, CaptureError, FrameSink};
+use super::{Backend, CaptureError, DisplayInfo, FrameSink};
 use crate::frame::Frame;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,13 +12,55 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use windows::core::{Interface, Result as WinResult};
 use windows::Win32::Foundation::HMODULE;
-use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
+use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_UNKNOWN;
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::*;
 
 const FRAME_INTERVAL: Duration = Duration::from_millis(33);
 const TARGET_WIDTH: u32 = 256;
+
+/// Every output of every adapter, in a stable order; display ids are 1-based indexes into it.
+fn outputs() -> Vec<(IDXGIAdapter1, IDXGIOutput, DXGI_OUTPUT_DESC)> {
+    let mut list = Vec::new();
+    unsafe {
+        let Ok(factory) = CreateDXGIFactory1::<IDXGIFactory1>() else { return list };
+        let mut a = 0;
+        while let Ok(adapter) = factory.EnumAdapters1(a) {
+            let mut o = 0;
+            while let Ok(output) = adapter.EnumOutputs(o) {
+                if let Ok(desc) = output.GetDesc() {
+                    if desc.AttachedToDesktop.as_bool() {
+                        list.push((adapter.clone(), output, desc));
+                    }
+                }
+                o += 1;
+            }
+            a += 1;
+        }
+    }
+    list
+}
+
+/// The primary display sits at the desktop origin.
+fn is_main(desc: &DXGI_OUTPUT_DESC) -> bool {
+    desc.DesktopCoordinates.left == 0 && desc.DesktopCoordinates.top == 0
+}
+
+pub fn displays() -> Vec<DisplayInfo> {
+    outputs()
+        .iter()
+        .enumerate()
+        .map(|(i, (_, _, desc))| {
+            let r = desc.DesktopCoordinates;
+            DisplayInfo {
+                id: i as u32 + 1,
+                label: format!("Display {} ({} × {})", i + 1, r.right - r.left, r.bottom - r.top),
+                main: is_main(desc),
+            }
+        })
+        .collect()
+}
 
 #[derive(Default)]
 struct DxgiCapture {
@@ -28,10 +70,10 @@ struct DxgiCapture {
 }
 
 impl Backend for DxgiCapture {
-    fn start(&mut self, sink: Arc<FrameSink>) -> Result<(), CaptureError> {
+    fn start(&mut self, sink: Arc<FrameSink>, display: u32) -> Result<(), CaptureError> {
         self.stop();
         // Fail fast (and report why) if duplication isn't possible at all.
-        let duplicator = Duplicator::new().map_err(|e| CaptureError::Unavailable(e.message().to_string()))?;
+        let duplicator = Duplicator::new(display).map_err(|e| CaptureError::Unavailable(e.message().to_string()))?;
         let stop = Arc::new(AtomicBool::new(false));
         let failure = Arc::new(Mutex::new(None));
         self.stop = stop.clone();
@@ -39,7 +81,7 @@ impl Backend for DxgiCapture {
         self.thread = Some(
             thread::Builder::new()
                 .name("ambilight-capture".into())
-                .spawn(move || capture_loop(duplicator, sink, stop, failure))
+                .spawn(move || capture_loop(duplicator, display, sink, stop, failure))
                 .map_err(|e| CaptureError::Unavailable(e.to_string()))?,
         );
         Ok(())
@@ -57,7 +99,13 @@ impl Backend for DxgiCapture {
     }
 }
 
-fn capture_loop(mut dup: Duplicator, sink: Arc<FrameSink>, stop: Arc<AtomicBool>, failure: Arc<Mutex<Option<String>>>) {
+fn capture_loop(
+    mut dup: Duplicator,
+    display: u32,
+    sink: Arc<FrameSink>,
+    stop: Arc<AtomicBool>,
+    failure: Arc<Mutex<Option<String>>>,
+) {
     let mut lost_since: Option<Instant> = None;
     while !stop.load(Ordering::Relaxed) {
         let started = Instant::now();
@@ -67,7 +115,7 @@ fn capture_loop(mut dup: Duplicator, sink: Arc<FrameSink>, stop: Arc<AtomicBool>
                 // Mode change, UAC prompt, lock screen…: rebuild the duplication.
                 let since = *lost_since.get_or_insert(started);
                 thread::sleep(Duration::from_millis(250));
-                match Duplicator::new() {
+                match Duplicator::new(display) {
                     Ok(d) => dup = d,
                     Err(e) if since.elapsed() > Duration::from_secs(30) => {
                         *failure.lock() = Some(e.message().to_string());
@@ -99,13 +147,26 @@ struct Duplicator {
 }
 
 impl Duplicator {
-    fn new() -> WinResult<Self> {
+    /// Duplicates `display` (1-based id from [`displays`]; 0 or unknown means the main display).
+    fn new(display: u32) -> WinResult<Self> {
         unsafe {
+            let mut outputs = outputs();
+            let index = (display as usize)
+                .checked_sub(1)
+                .filter(|&i| i < outputs.len())
+                .or_else(|| outputs.iter().position(|(_, _, d)| is_main(d)))
+                .unwrap_or(0);
+            if outputs.is_empty() {
+                return Err(windows::core::Error::from(DXGI_ERROR_NOT_FOUND));
+            }
+            let (adapter, output, _) = outputs.swap_remove(index);
+
+            // The device must live on the adapter that drives the display.
             let mut device = None;
             let mut context = None;
             D3D11CreateDevice(
-                None,
-                D3D_DRIVER_TYPE_HARDWARE,
+                &adapter,
+                D3D_DRIVER_TYPE_UNKNOWN,
                 HMODULE::default(),
                 D3D11_CREATE_DEVICE_BGRA_SUPPORT,
                 None,
@@ -117,9 +178,7 @@ impl Duplicator {
             let device: ID3D11Device = device.unwrap();
             let context = context.unwrap();
 
-            // Primary output of the adapter the device runs on.
-            let adapter = device.cast::<IDXGIDevice>()?.GetAdapter()?;
-            let output: IDXGIOutput1 = adapter.EnumOutputs(0)?.cast()?;
+            let output: IDXGIOutput1 = output.cast()?;
             let duplication = output.DuplicateOutput(&device)?;
             let desc = duplication.GetDesc();
             let (width, height) = (desc.ModeDesc.Width, desc.ModeDesc.Height);
@@ -218,6 +277,6 @@ pub fn new_backend() -> Box<dyn Backend> {
 
 pub fn open_permission_settings() {}
 
-pub fn display_asleep() -> bool {
+pub fn display_asleep(_display: u32) -> bool {
     false
 }

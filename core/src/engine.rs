@@ -1,17 +1,19 @@
-//! The engine thread: owns the serial link, screen capture and audio capture, and pushes an
-//! Adalight frame to the strip 50 times a second.
+//! The engine thread: owns the output link, screen capture and audio capture, and pushes a
+//! frame to the strip 50 times a second.
 
-use crate::adalight;
 use crate::audio::{AudioError, AudioSink, Controller, ControllerState};
 use crate::capture::{self, Backend, CaptureError, FrameSink};
-use crate::config::{Config, Mode, Rgb};
+use crate::config::{Config, Effect, Mode, Output, Rgb};
+use crate::effects::Effects;
 use crate::foreground::{self, Foreground};
 use crate::layout::{self, Region, Side};
+use crate::output::Link;
+use crate::pixels::Pipeline;
 use crate::serial::{self, LinkError};
 use crate::sound::SoundVisualizer;
+use chrono::Timelike;
 use parking_lot::Mutex;
 use serde::Serialize;
-use serialport::SerialPort;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
@@ -23,6 +25,7 @@ const CAPTURE_RETRY_EVERY: Duration = Duration::from_secs(3);
 /// A wall-clock jump this large between ticks means the machine was asleep.
 const SLEEP_GAP: Duration = Duration::from_secs(5);
 const FOREGROUND_CHECK_EVERY: Duration = Duration::from_millis(500);
+const TEST_PATTERN_FOR: Duration = Duration::from_secs(8);
 /// Screen colors look washed out on LEDs without a little gamma.
 const SCREEN_GAMMA: f32 = 1.5;
 
@@ -39,19 +42,29 @@ pub enum CaptureState {
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
-    /// Short name of the connected port, while connected.
+    /// Short name of the connected port or WLED host, while connected.
     pub port: Option<String>,
     pub link_error: Option<String>,
     pub capture: CaptureState,
-    /// System-audio capture for Sound mode.
+    /// System-audio capture for Sound, Screen + Sound and Spectrum.
     pub audio: CaptureState,
     /// Streaming service whose window being in front switched Screen mode to `auto_switch_mode`.
     pub auto_switched_for: Option<String>,
+    /// The night schedule currently dims (or turns off) the lights.
+    pub scheduled: bool,
+}
+
+#[derive(Clone, Copy)]
+enum Pattern {
+    /// LED 1 white; right red, top green, left blue, bottom yellow.
+    Identify,
+    /// Every LED full white, for setting the white balance.
+    White,
 }
 
 enum Command {
     Config(Config),
-    Identify,
+    Test(Pattern),
     Reconnect,
     Shutdown(Sender<()>),
 }
@@ -79,12 +92,17 @@ impl Engine {
         let _ = self.tx.send(Command::Config(config));
     }
 
-    /// Shows a layout test pattern for a few seconds.
+    /// Shows the layout test pattern for a few seconds.
     pub fn identify(&self) {
-        let _ = self.tx.send(Command::Identify);
+        let _ = self.tx.send(Command::Test(Pattern::Identify));
     }
 
-    /// Reopens the serial port and restarts screen capture.
+    /// Shows full white for a few seconds (for white balance).
+    pub fn test_white(&self) {
+        let _ = self.tx.send(Command::Test(Pattern::White));
+    }
+
+    /// Reopens the output and restarts screen and audio capture.
     pub fn reconnect(&self) {
         let _ = self.tx.send(Command::Reconnect);
     }
@@ -107,11 +125,12 @@ struct Worker {
     config: Config,
     regions: Vec<Region>,
     current: Vec<Rgb>,
-    buf: Vec<u8>,
+    rgb: Vec<u8>,
+    scratch: Vec<u8>,
     started: Instant,
-    identify_until: Option<Instant>,
+    test: Option<(Pattern, Instant)>,
 
-    port: Option<Box<dyn SerialPort>>,
+    link: Option<Link>,
     next_connect: Instant,
 
     sink: Arc<FrameSink>,
@@ -125,9 +144,13 @@ struct Worker {
     audio_requested: bool,
     next_audio: Instant,
     visualizer: SoundVisualizer,
+    effects: Effects,
 
     auto_app: Option<&'static str>,
     next_foreground_check: Instant,
+    /// Brightness factor from the night schedule, when it applies.
+    schedule_factor: Option<f32>,
+    next_schedule_check: Instant,
 
     display_asleep: bool,
     next_display_check: Instant,
@@ -151,10 +174,11 @@ impl Worker {
             config: Config::default(),
             regions: Vec::new(),
             current: Vec::new(),
-            buf: Vec::new(),
+            rgb: Vec::new(),
+            scratch: Vec::new(),
             started: now,
-            identify_until: None,
-            port: None,
+            test: None,
+            link: None,
             next_connect: now,
             sink: Arc::new(FrameSink::default()),
             backend: capture::backend(),
@@ -165,8 +189,11 @@ impl Worker {
             audio_requested: false,
             next_audio: now,
             visualizer: SoundVisualizer::default(),
+            effects: Effects::default(),
             auto_app: None,
             next_foreground_check: now,
+            schedule_factor: None,
+            next_schedule_check: now,
             display_asleep: false,
             next_display_check: now,
             last_wall: SystemTime::now(),
@@ -184,24 +211,25 @@ impl Worker {
             while let Ok(cmd) = self.rx.try_recv() {
                 match cmd {
                     Command::Config(c) => self.apply(c),
-                    Command::Identify => self.identify_until = Some(Instant::now() + Duration::from_secs(6)),
+                    Command::Test(p) => self.test = Some((p, Instant::now() + TEST_PATTERN_FOR)),
                     Command::Reconnect => self.restart_all(),
                     Command::Shutdown(ack) => {
                         self.blackout();
                         self.stop_capture();
                         self.stop_audio();
-                        self.port = None;
+                        self.link = None;
                         let _ = ack.send(());
                         return;
                     }
                 }
             }
             self.watch_sleep();
+            self.watch_schedule();
             self.watch_foreground();
             self.update_capture();
             self.update_audio();
-            self.ensure_port();
-            if self.port.is_some() && !self.display_asleep {
+            self.ensure_link();
+            if self.link.is_some() && !self.display_asleep {
                 self.render();
             }
             thread::sleep(TICK.saturating_sub(tick_start.elapsed()));
@@ -209,22 +237,31 @@ impl Worker {
     }
 
     fn apply(&mut self, c: Config) {
-        let link_changed = c.port != self.config.port || c.baud != self.config.baud;
+        let link_changed = c.port != self.config.port
+            || c.baud != self.config.baud
+            || c.output != self.config.output
+            || c.wled_host != self.config.wled_host;
+        let display_changed = c.display != self.config.display;
         self.regions = layout::build(&c);
         if self.current.len() != self.regions.len() {
             self.current = vec![Rgb::BLACK; self.regions.len()];
         }
         self.sink.configure(self.regions.clone(), c.ignore_black_bars);
         self.config = c;
+        self.next_schedule_check = Instant::now();
         if link_changed {
-            self.port = None;
+            self.link = None;
             self.next_connect = Instant::now();
+        }
+        if display_changed {
+            self.stop_capture();
+            self.next_capture = Instant::now();
         }
     }
 
-    /// Fresh serial connection and capture stream (after sleep, or on request).
+    /// Fresh output connection, capture stream and audio tap (after sleep, or on request).
     fn restart_all(&mut self) {
-        self.port = None;
+        self.link = None;
         self.next_connect = Instant::now();
         self.stop_capture();
         self.next_capture = Instant::now();
@@ -232,17 +269,65 @@ impl Worker {
         self.next_audio = Instant::now();
     }
 
-    /// The mode actually shown: Screen gives way to `auto_switch_mode` while a listed app is in front.
+    /// The mode actually shown: screen modes give way to `auto_switch_mode` while a streaming
+    /// service is in front.
     fn effective_mode(&self) -> Mode {
-        if self.config.mode == Mode::Screen && self.auto_app.is_some() {
+        if self.config.mode.captures_screen() && self.auto_app.is_some() {
             self.config.auto_switch_mode
         } else {
             self.config.mode
         }
     }
 
+    /// Whether anything is shown at all (on, and not switched off by the night schedule).
+    fn lit(&self) -> bool {
+        self.config.enabled && self.schedule_factor != Some(0.0) && !self.display_asleep
+    }
+
+    fn watch_sleep(&mut self) {
+        // Instant doesn't advance during sleep on every OS, so compare wall-clock time.
+        let now = SystemTime::now();
+        let gap = now.duration_since(self.last_wall).unwrap_or_default();
+        self.last_wall = now;
+        if gap > SLEEP_GAP {
+            log::info!("resumed after {gap:?}; reconnecting");
+            self.restart_all();
+        }
+
+        if Instant::now() >= self.next_display_check {
+            self.next_display_check = Instant::now() + Duration::from_secs(1);
+            let asleep = capture::display_asleep(self.config.display);
+            if asleep != self.display_asleep {
+                log::info!("display {}", if asleep { "asleep" } else { "awake" });
+                self.display_asleep = asleep;
+                if asleep {
+                    self.blackout();
+                } else {
+                    self.restart_all();
+                }
+            }
+        }
+    }
+
+    fn watch_schedule(&mut self) {
+        if Instant::now() < self.next_schedule_check {
+            return;
+        }
+        self.next_schedule_check = Instant::now() + Duration::from_secs(10);
+        let now = chrono::Local::now();
+        let factor = self.config.schedule.factor_at((now.hour() * 60 + now.minute()) as u16);
+        if factor != self.schedule_factor {
+            log::info!("schedule: {}", factor.map_or("off".into(), |f| format!("dim to {f}")));
+            self.schedule_factor = factor;
+            if self.status.scheduled != factor.is_some() {
+                self.status.scheduled = factor.is_some();
+                self.publish();
+            }
+        }
+    }
+
     fn watch_foreground(&mut self) {
-        if self.config.mode != Mode::Screen || self.config.auto_switch_services.is_empty() {
+        if !self.config.mode.captures_screen() || self.config.auto_switch_services.is_empty() {
             if self.auto_app.is_some() {
                 self.set_auto_app(None);
             }
@@ -272,33 +357,8 @@ impl Worker {
         self.publish();
     }
 
-    fn watch_sleep(&mut self) {
-        // Instant doesn't advance during sleep on every OS, so compare wall-clock time.
-        let now = SystemTime::now();
-        let gap = now.duration_since(self.last_wall).unwrap_or_default();
-        self.last_wall = now;
-        if gap > SLEEP_GAP {
-            log::info!("resumed after {gap:?}; reconnecting");
-            self.restart_all();
-        }
-
-        if Instant::now() >= self.next_display_check {
-            self.next_display_check = Instant::now() + Duration::from_secs(1);
-            let asleep = capture::display_asleep();
-            if asleep != self.display_asleep {
-                log::info!("display {}", if asleep { "asleep" } else { "awake" });
-                self.display_asleep = asleep;
-                if asleep {
-                    self.blackout();
-                } else {
-                    self.restart_all();
-                }
-            }
-        }
-    }
-
     fn update_capture(&mut self) {
-        let wanted = self.config.enabled && self.effective_mode() == Mode::Screen && !self.display_asleep;
+        let wanted = self.lit() && self.effective_mode().captures_screen();
         if self.capturing {
             if let Some(err) = self.backend.failure() {
                 log::warn!("capture stopped: {err}");
@@ -320,8 +380,7 @@ impl Worker {
         if Instant::now() < self.next_capture {
             return;
         }
-        log::debug!("starting screen capture");
-        match self.backend.start(self.sink.clone()) {
+        match self.backend.start(self.sink.clone(), self.config.display) {
             Ok(()) => {
                 self.capturing = true;
                 self.set_capture(CaptureState::Running);
@@ -344,9 +403,16 @@ impl Worker {
         self.sink.clear();
     }
 
+    fn wants_audio(&self) -> bool {
+        match self.effective_mode() {
+            Mode::Sound | Mode::ScreenSound => true,
+            Mode::Effect => self.config.effect.needs_audio(),
+            Mode::Screen | Mode::Color => false,
+        }
+    }
+
     fn update_audio(&mut self) {
-        let wanted = self.config.enabled && self.effective_mode() == Mode::Sound && !self.display_asleep;
-        if !wanted {
+        if !(self.lit() && self.wants_audio()) {
             if self.audio_requested {
                 self.stop_audio();
             }
@@ -390,26 +456,38 @@ impl Worker {
         self.audio_sink.clear();
     }
 
-    fn ensure_port(&mut self) {
-        if self.port.is_some() || Instant::now() < self.next_connect {
+    fn ensure_link(&mut self) {
+        if self.link.is_some() || Instant::now() < self.next_connect {
             return;
         }
         self.next_connect = Instant::now() + RECONNECT_EVERY;
-        let path = if self.config.port.is_empty() {
-            match serial::available_ports().into_iter().next() {
-                Some(p) => p.path,
-                None => return self.set_link(None, Some(LinkError::NotFound.to_string())),
+        match self.config.output {
+            Output::Serial => {
+                let path = if self.config.port.is_empty() {
+                    match serial::available_ports().into_iter().next() {
+                        Some(p) => p.path,
+                        None => return self.set_link(None, Some(LinkError::NotFound.to_string())),
+                    }
+                } else {
+                    self.config.port.clone()
+                };
+                match Link::open_serial(&path, self.config.baud) {
+                    Ok(link) => {
+                        log::info!("opened {path} at {} baud", self.config.baud);
+                        self.link = Some(link);
+                        self.set_link(Some(serial::short_name(&path).to_string()), None);
+                    }
+                    Err(e) => self.set_link(None, Some(e.to_string())),
+                }
             }
-        } else {
-            self.config.port.clone()
-        };
-        match serial::open(&path, self.config.baud) {
-            Ok(port) => {
-                log::info!("opened {path} at {} baud", self.config.baud);
-                self.port = Some(port);
-                self.set_link(Some(serial::short_name(&path).to_string()), None);
-            }
-            Err(e) => self.set_link(None, Some(e.to_string())),
+            Output::Wled => match Link::open_wled(&self.config.wled_host) {
+                Ok(link) => {
+                    log::info!("sending to WLED at {}", self.config.wled_host);
+                    self.link = Some(link);
+                    self.set_link(Some(format!("WLED {}", self.config.wled_host.trim())), None);
+                }
+                Err(e) => self.set_link(None, Some(e)),
+            },
         }
     }
 
@@ -419,81 +497,117 @@ impl Worker {
             return;
         }
         let now = Instant::now();
+        let dt = TICK.as_secs_f32();
         let mut gamma = 1.0;
-        let target: Vec<Rgb> = if self.identify_until.is_some_and(|t| now < t) {
-            self.current = self.identify_pattern();
-            self.current.clone()
-        } else if !self.config.enabled {
+        let mut smooth = true;
+
+        if let Some((pattern, until)) = self.test {
+            if now < until {
+                self.current = self.test_pattern(pattern);
+                return self.send(1.0, 1.0);
+            }
+            self.test = None;
+        }
+
+        let target: Vec<Rgb> = if !self.lit() {
             vec![Rgb::BLACK; n]
         } else {
             match self.effective_mode() {
                 Mode::Screen => {
                     gamma = SCREEN_GAMMA;
-                    // Hold the last colors until capture delivers frames.
-                    self.sink.latest().filter(|c| c.len() == n).unwrap_or_else(|| self.current.clone())
+                    self.screen_colors()
                 }
-                Mode::Color => vec![self.config.color; n],
-                Mode::Rainbow => {
-                    let t = self.started.elapsed().as_secs_f32() * 0.08;
-                    (0..n).map(|i| Rgb::from_hue(i as f32 / n as f32 + t)).collect()
+                Mode::ScreenSound => {
+                    gamma = SCREEN_GAMMA;
+                    self.visualizer.update(self.audio_sink.take(), dt);
+                    // Screen colors, breathing with the soundtrack: dimmer in quiet passages,
+                    // full on loud ones, with an extra kick on bass hits.
+                    let pulse = (0.35 + 0.65 * self.visualizer.level() + 0.3 * self.visualizer.punch()).min(1.0);
+                    self.screen_colors().into_iter().map(|c| c.scale(pulse)).collect()
                 }
                 Mode::Sound => {
-                    self.visualizer.update(self.audio_sink.take(), TICK.as_secs_f32());
-                    // The visualizer already shapes attack and release; skip extra smoothing.
-                    self.current = self.visualizer.render(n);
-                    self.current.clone()
+                    self.visualizer.update(self.audio_sink.take(), dt);
+                    smooth = false; // the visualizer shapes attack and release itself
+                    self.visualizer.render(n)
+                }
+                Mode::Color => vec![self.config.color; n],
+                Mode::Effect => {
+                    if self.config.effect.needs_audio() {
+                        self.visualizer.update(self.audio_sink.take(), dt);
+                    }
+                    smooth = self.config.effect != Effect::Spectrum;
+                    let t = self.started.elapsed().as_secs_f32();
+                    self.effects.render(self.config.effect, &self.regions, t, dt, self.config.color, &self.visualizer)
                 }
             }
         };
 
-        if self.config.smoothing_ms > 0.0 {
+        if smooth && self.config.smoothing_ms > 0.0 {
             // Time constant so a change is ~95% complete after smoothing_ms.
             let tau = self.config.smoothing_ms / 1000.0 / 3.0;
-            let a = 1.0 - (-TICK.as_secs_f32() / tau).exp();
+            let a = 1.0 - (-dt / tau).exp();
             for (c, t) in self.current.iter_mut().zip(&target) {
-                c.r += (t.r - c.r) * a;
-                c.g += (t.g - c.g) * a;
-                c.b += (t.b - c.b) * a;
+                *c = c.lerp(*t, a);
             }
         } else {
             self.current = target;
         }
-
-        adalight::encode(&self.current, gamma, self.config.brightness, &mut self.buf);
-        self.write_frame();
+        let brightness = self.config.brightness * self.schedule_factor.unwrap_or(1.0);
+        self.send(gamma, brightness);
     }
 
-    fn write_frame(&mut self) {
-        let Some(port) = self.port.as_mut() else { return };
-        if let Err(e) = port.write_all(&self.buf) {
-            log::warn!("serial write failed: {e}");
-            self.port = None;
+    /// The latest captured colors; holds the previous ones until capture delivers frames.
+    fn screen_colors(&self) -> Vec<Rgb> {
+        let n = self.regions.len();
+        self.sink.latest().filter(|c| c.len() == n).unwrap_or_else(|| self.current.clone())
+    }
+
+    fn send(&mut self, gamma: f32, brightness: f32) {
+        let pipeline = Pipeline {
+            gamma,
+            brightness,
+            white_balance: self.config.white_balance,
+            max_current_a: self.config.max_current_a,
+        };
+        pipeline.encode(&self.current, &mut self.rgb);
+        self.write();
+    }
+
+    fn write(&mut self) {
+        let Some(link) = self.link.as_mut() else { return };
+        if let Err(e) = link.send(&self.rgb, &mut self.scratch) {
+            log::warn!("write failed: {e}");
+            self.link = None;
             self.next_connect = Instant::now() + RECONNECT_EVERY;
             self.set_link(None, Some("LED controller disconnected. Reconnecting…".into()));
         }
     }
 
     fn blackout(&mut self) {
-        if self.port.is_some() && !self.regions.is_empty() {
+        if self.link.is_some() && !self.regions.is_empty() {
             self.current.fill(Rgb::BLACK);
-            adalight::encode(&self.current, 1.0, 0.0, &mut self.buf);
-            self.write_frame();
+            self.rgb.clear();
+            self.rgb.resize(self.regions.len() * 3, 0);
+            self.write();
         }
     }
 
-    /// LED 1 white; right red, top green, left blue, bottom yellow.
-    fn identify_pattern(&self) -> Vec<Rgb> {
-        self.regions
-            .iter()
-            .enumerate()
-            .map(|(i, r)| match (i, r.side) {
-                (0, _) => Rgb::WHITE,
-                (_, Side::Right) => Rgb::new(1.0, 0.0, 0.0),
-                (_, Side::Top) => Rgb::new(0.0, 1.0, 0.0),
-                (_, Side::Left) => Rgb::new(0.0, 0.0, 1.0),
-                (_, Side::Bottom) => Rgb::new(1.0, 0.8, 0.0),
-            })
-            .collect()
+    fn test_pattern(&self, pattern: Pattern) -> Vec<Rgb> {
+        match pattern {
+            Pattern::White => vec![Rgb::WHITE; self.regions.len()],
+            Pattern::Identify => self
+                .regions
+                .iter()
+                .enumerate()
+                .map(|(i, r)| match (i, r.side) {
+                    (0, _) => Rgb::WHITE,
+                    (_, Side::Right) => Rgb::new(1.0, 0.0, 0.0),
+                    (_, Side::Top) => Rgb::new(0.0, 1.0, 0.0),
+                    (_, Side::Left) => Rgb::new(0.0, 0.0, 1.0),
+                    (_, Side::Bottom) => Rgb::new(1.0, 0.8, 0.0),
+                })
+                .collect(),
+        }
     }
 
     fn set_link(&mut self, port: Option<String>, error: Option<String>) {

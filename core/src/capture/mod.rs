@@ -28,9 +28,19 @@ pub enum CaptureError {
     Unavailable(String),
 }
 
+/// A display that can be captured.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DisplayInfo {
+    /// Stable for the session; pass to [`Backend::start`]. 0 is never used (it means "main").
+    pub id: u32,
+    pub label: String,
+    pub main: bool,
+}
+
 /// A running screen capture.
 pub trait Backend: Send {
-    fn start(&mut self, sink: Arc<FrameSink>) -> Result<(), CaptureError>;
+    /// Captures `display` (an id from [`displays`], or 0 for the main display).
+    fn start(&mut self, sink: Arc<FrameSink>, display: u32) -> Result<(), CaptureError>;
     fn stop(&mut self);
     /// Set when a started capture has died on its own.
     fn failure(&self) -> Option<String>;
@@ -45,9 +55,16 @@ pub fn open_permission_settings() {
     platform::open_permission_settings()
 }
 
-/// True while the main display is asleep (lid closed, display off).
-pub fn display_asleep() -> bool {
-    platform::display_asleep()
+/// Displays that can be captured, main first.
+pub fn displays() -> Vec<DisplayInfo> {
+    let mut list = platform::displays();
+    list.sort_by_key(|d| !d.main);
+    list
+}
+
+/// True while the captured display is asleep (lid closed, display off).
+pub fn display_asleep(display: u32) -> bool {
+    platform::display_asleep(display)
 }
 
 #[derive(Default)]

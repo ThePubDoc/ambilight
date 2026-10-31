@@ -125,6 +125,10 @@ impl Default for Controller {
     }
 }
 
+/// Number of spectrum bands, log-spaced from 60 Hz to 12 kHz.
+pub const SPECTRUM_BANDS: usize = 8;
+const SPECTRUM_CENTERS: [f32; SPECTRUM_BANDS] = [60.0, 125.0, 250.0, 500.0, 1000.0, 2500.0, 5500.0, 12000.0];
+
 /// RMS loudness (0..1 full scale) of the audio since the previous [`AudioSink::take`].
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Bands {
@@ -133,6 +137,46 @@ pub struct Bands {
     pub bass: f32,
     /// Above ~2 kHz: cymbals, voices' sibilance, sparkle.
     pub treble: f32,
+    /// Band-pass loudness per [`SPECTRUM_CENTERS`], low to high.
+    pub spectrum: [f32; SPECTRUM_BANDS],
+}
+
+/// Band-pass biquad (RBJ cookbook, 0 dB peak gain).
+#[derive(Default, Clone, Copy)]
+struct BandPass {
+    b0: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+    x1: f32,
+    x2: f32,
+    y1: f32,
+    y2: f32,
+}
+
+impl BandPass {
+    fn new(center: f32, sample_rate: f32) -> Self {
+        let q = 1.4;
+        let w0 = TAU * center.min(sample_rate * 0.45) / sample_rate;
+        let alpha = w0.sin() / (2.0 * q);
+        let a0 = 1.0 + alpha;
+        BandPass {
+            b0: alpha / a0,
+            b2: -alpha / a0,
+            a1: -2.0 * w0.cos() / a0,
+            a2: (1.0 - alpha) / a0,
+            ..Default::default()
+        }
+    }
+
+    fn process(&mut self, x: f32) -> f32 {
+        let y = self.b0 * x + self.b2 * self.x2 - self.a1 * self.y1 - self.a2 * self.y2;
+        self.x2 = self.x1;
+        self.x1 = x;
+        self.y2 = self.y1;
+        self.y1 = y;
+        y
+    }
 }
 
 #[derive(Default)]
@@ -143,6 +187,9 @@ struct SinkState {
     sum_bass: f64,
     sum_treble: f64,
     count: u64,
+    sample_rate: f32,
+    filters: [BandPass; SPECTRUM_BANDS],
+    sum_spectrum: [f64; SPECTRUM_BANDS],
 }
 
 #[derive(Default)]
@@ -157,6 +204,10 @@ impl AudioSink {
         let bass_a = 1.0 - (-TAU * 150.0 / sample_rate).exp();
         let treble_a = 1.0 - (-TAU * 2000.0 / sample_rate).exp();
         let mut s = self.state.lock();
+        if s.sample_rate != sample_rate {
+            s.sample_rate = sample_rate;
+            s.filters = SPECTRUM_CENTERS.map(|c| BandPass::new(c, sample_rate));
+        }
         for frame in samples.chunks_exact(channels) {
             let x = frame.iter().sum::<f32>() / channels as f32;
             s.bass_lp += (x - s.bass_lp) * bass_a;
@@ -165,6 +216,10 @@ impl AudioSink {
             s.sum_full += (x * x) as f64;
             s.sum_bass += (s.bass_lp * s.bass_lp) as f64;
             s.sum_treble += (treble * treble) as f64;
+            for i in 0..SPECTRUM_BANDS {
+                let y = s.filters[i].process(x);
+                s.sum_spectrum[i] += (y * y) as f64;
+            }
             s.count += 1;
         }
     }
@@ -180,10 +235,12 @@ impl AudioSink {
             full: (s.sum_full / n).sqrt() as f32,
             bass: (s.sum_bass / n).sqrt() as f32,
             treble: (s.sum_treble / n).sqrt() as f32,
+            spectrum: s.sum_spectrum.map(|v| (v / n).sqrt() as f32),
         };
         s.sum_full = 0.0;
         s.sum_bass = 0.0;
         s.sum_treble = 0.0;
+        s.sum_spectrum = [0.0; SPECTRUM_BANDS];
         s.count = 0;
         bands
     }
@@ -218,6 +275,17 @@ mod tests {
         let b = sink.take();
         assert!(b.treble > 0.25, "{b:?}");
         assert!(b.bass < 0.02, "{b:?}");
+    }
+
+    #[test]
+    fn spectrum_peaks_in_the_matching_band() {
+        for (band, freq) in [(0usize, 60.0f32), (4, 1000.0), (7, 12000.0)] {
+            let sink = AudioSink::default();
+            sink.push(&sine(freq, 48_000.0, 0.5, 0.5), 1, 48_000.0);
+            let spectrum = sink.take().spectrum;
+            let loudest = (0..SPECTRUM_BANDS).max_by(|&a, &b| spectrum[a].total_cmp(&spectrum[b])).unwrap();
+            assert_eq!(loudest, band, "{freq} Hz -> {spectrum:?}");
+        }
     }
 
     #[test]

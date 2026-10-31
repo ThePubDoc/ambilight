@@ -1,10 +1,10 @@
-use super::{Backend, CaptureError, FrameSink};
+use super::{Backend, CaptureError, DisplayInfo, FrameSink};
 use std::sync::Arc;
 
 struct Unsupported;
 
 impl Backend for Unsupported {
-    fn start(&mut self, _sink: Arc<FrameSink>) -> Result<(), CaptureError> {
+    fn start(&mut self, _sink: Arc<FrameSink>, _display: u32) -> Result<(), CaptureError> {
         Err(CaptureError::Unavailable("Screen capture isn't supported on this platform yet".into()))
     }
     fn stop(&mut self) {}
@@ -19,6 +19,10 @@ pub fn new_backend() -> Box<dyn Backend> {
 
 pub fn open_permission_settings() {}
 
-pub fn display_asleep() -> bool {
+pub fn displays() -> Vec<DisplayInfo> {
+    Vec::new()
+}
+
+pub fn display_asleep(_display: u32) -> bool {
     false
 }

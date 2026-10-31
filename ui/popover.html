@@ -24,11 +24,25 @@
       </div>
     </div>
 
+    <div class="update hidden" id="update">
+      <span id="updateText"></span>
+      <button class="button" id="installUpdate">Install</button>
+    </div>
+
     <div class="segmented" id="mode" role="radiogroup" aria-label="Mode">
-      <button data-mode="screen">Screen</button>
-      <button data-mode="color">Color</button>
-      <button data-mode="rainbow">Rainbow</button>
-      <button data-mode="sound">Sound</button>
+      <button data-mode="screen" title="Follow the screen">Screen</button>
+      <button data-mode="screenSound" title="Screen colors, pulsing with the audio">Mix</button>
+      <button data-mode="sound" title="Follow the audio">Sound</button>
+      <button data-mode="color" title="One color">Color</button>
+      <button data-mode="effect" title="Animated effects">Effect</button>
+    </div>
+
+    <div class="segmented small hidden" id="effect" role="radiogroup" aria-label="Effect">
+      <button data-effect="rainbow">Rainbow</button>
+      <button data-effect="spectrum">Spectrum</button>
+      <button data-effect="breathing">Breathe</button>
+      <button data-effect="candle">Candle</button>
+      <button data-effect="aurora">Aurora</button>
     </div>
 
     <div class="swatches hidden" id="swatches"></div>
@@ -43,6 +57,7 @@
 
     <footer>
       <button class="plain" id="settings">Settings…</button>
+      <span class="secondary shortcut-hint" id="shortcutHint"></span>
       <button class="plain" id="quit">Quit</button>
     </footer>
   </main>

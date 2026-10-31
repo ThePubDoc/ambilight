@@ -35,9 +35,12 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the update archives that the in-app updater downloads.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Ambilight ${{ github.ref_name }}
           releaseBody: See the README for setup. macOS builds are not notarized; see "First launch on macOS".
           releaseDraft: true
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --config '{"bundle":{"createUpdaterArtifacts":true}}'

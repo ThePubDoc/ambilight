@@ -12,10 +12,10 @@
     <div class="group">
       <div class="preview"><canvas id="preview"></canvas></div>
       <div class="legend">Seen from the front. White ring is LED 1 (the controller end); colors run in wiring order.</div>
-      <div class="row"><span class="label">Top</span><div class="stepper" data-side="top"></div></div>
-      <div class="row"><span class="label">Right</span><div class="stepper" data-side="right"></div></div>
-      <div class="row"><span class="label">Bottom</span><div class="stepper" data-side="bottom"></div></div>
-      <div class="row"><span class="label">Left</span><div class="stepper" data-side="left"></div></div>
+      <div class="row"><span class="label">Top</span><div class="stepper" data-field="top"></div></div>
+      <div class="row"><span class="label">Right</span><div class="stepper" data-field="right"></div></div>
+      <div class="row"><span class="label">Bottom</span><div class="stepper" data-field="bottom"></div></div>
+      <div class="row"><span class="label">Left</span><div class="stepper" data-field="left"></div></div>
       <div class="row"><span class="label">Total</span><span class="value" id="total"></span></div>
       <div class="row">
         <label for="start">First LED (controller end)</label>
@@ -34,55 +34,124 @@
         </select>
       </div>
       <div class="row">
-        <div class="label">Check on the strip<small>For 6 seconds: LED 1 white, right red, top green, left blue, bottom yellow.</small></div>
+        <div class="label">LED 1 offset<small>If LED 1 isn't at the corner: how many LEDs past it, along the strip (negative if before).</small></div>
+        <div class="stepper" data-field="offset" data-min="-500"></div>
+      </div>
+      <div class="row">
+        <div class="label">Gap at the bottom<small>LED-sized space in the middle of the bottom edge with no LEDs, e.g. around the monitor stand.</small></div>
+        <div class="stepper" data-field="bottomGap"></div>
+      </div>
+      <div class="row">
+        <div class="label">Check on the strip<small>For 8 seconds: LED 1 white, right red, top green, left blue, bottom yellow.</small></div>
         <button class="button" id="identify">Identify LEDs</button>
       </div>
     </div>
 
     <h2>Picture</h2>
     <div class="group">
+      <div class="row">
+        <label for="display">Display</label>
+        <select id="display"></select>
+      </div>
       <div class="row smoothing">
         <div class="label">Smoothing<small>Higher is calmer, lower reacts faster.</small></div>
         <div class="controls"><input type="range" id="smoothing" min="0" max="500" step="10" aria-label="Smoothing"><span class="value" id="smoothingValue"></span></div>
+      </div>
+      <div class="row smoothing">
+        <div class="label">Edge depth<small>How far into the screen each LED looks. Shallow follows the very edge; deeper is broader and calmer.</small></div>
+        <div class="controls"><input type="range" id="edgeDepth" min="2" max="25" step="1" aria-label="Edge depth"><span class="value" id="edgeDepthValue"></span></div>
       </div>
       <div class="row">
         <div class="label">Ignore black bars<small>Uses the picture area of letterboxed videos.</small></div>
         <label class="switch"><input type="checkbox" id="blackBars" aria-label="Ignore black bars"><span></span></label>
       </div>
       <div class="row">
-        <label for="color">Color for Color mode</label>
+        <label for="color">Color for Color mode and Breathing</label>
         <input type="color" id="color">
       </div>
+    </div>
+
+    <h2>White balance</h2>
+    <div class="group">
+      <div class="row">
+        <div class="label">If white looks blue or green on your strip, lower that color until it looks neutral. <b>Show white</b> lights the whole strip white for 8 seconds while you adjust.</div>
+      </div>
+      <div class="row wb"><span class="label">Red</span><div class="controls"><input type="range" data-channel="r" min="40" max="100" aria-label="Red"><span class="value"></span></div></div>
+      <div class="row wb"><span class="label">Green</span><div class="controls"><input type="range" data-channel="g" min="40" max="100" aria-label="Green"><span class="value"></span></div></div>
+      <div class="row wb"><span class="label">Blue</span><div class="controls"><input type="range" data-channel="b" min="40" max="100" aria-label="Blue"><span class="value"></span></div></div>
+      <div class="row">
+        <button class="plain" id="wbReset">Reset</button>
+        <button class="button" id="testWhite">Show white</button>
+      </div>
+    </div>
+
+    <h2>Power</h2>
+    <div class="group">
+      <div class="row">
+        <div class="label">Power supply limit<small>Your 5 V adapter's rating. Bright scenes are dimmed just enough to stay under 90% of it. 0 turns the limit off.</small></div>
+        <div class="controls"><input type="number" id="maxCurrent" min="0" max="100" step="0.5" aria-label="Amps"> A</div>
+      </div>
+      <div class="row"><span class="label secondary" id="powerEstimate"></span></div>
     </div>
 
     <h2>Streaming video</h2>
     <div class="group">
       <div class="row">
-        <div class="label">Streaming services black out their video while the screen is captured. While one of these is the window in front (in any browser or app), Screen mode switches to another mode. Other sites, like YouTube, keep screen sync.</div>
+        <div class="label">Streaming services black out their video while the screen is captured. While one of these is the window in front (in any browser or app), the screen modes switch to another mode. Other sites, like YouTube, keep screen sync.</div>
       </div>
       <div class="row">
         <label for="autoSwitchMode">Switch to</label>
         <select id="autoSwitchMode">
           <option value="sound">Sound (follows the audio)</option>
           <option value="color">Color</option>
-          <option value="rainbow">Rainbow</option>
+          <option value="effect">Effect</option>
         </select>
       </div>
       <div id="services"></div>
     </div>
 
+    <h2>Night schedule</h2>
+    <div class="group">
+      <div class="row">
+        <label for="scheduleOn">Dim or turn off the lights every night</label>
+        <label class="switch"><input type="checkbox" id="scheduleOn"><span></span></label>
+      </div>
+      <div class="row"><label for="scheduleFrom">From</label><input type="time" id="scheduleFrom"></div>
+      <div class="row"><label for="scheduleUntil">Until</label><input type="time" id="scheduleUntil"></div>
+      <div class="row">
+        <label for="scheduleDim">During that time</label>
+        <select id="scheduleDim">
+          <option value="0">Lights off</option>
+          <option value="0.1">Dim to 10%</option>
+          <option value="0.25">Dim to 25%</option>
+          <option value="0.5">Dim to 50%</option>
+        </select>
+      </div>
+    </div>
+
     <h2>Connection</h2>
     <div class="group">
       <div class="row">
+        <label for="output">LED controller</label>
+        <select id="output">
+          <option value="serial">USB (Adalight)</option>
+          <option value="wled">Wi-Fi (WLED)</option>
+        </select>
+      </div>
+      <div class="row serial-only">
         <label for="port">USB port</label>
         <div class="controls">
           <select id="port"></select>
           <button class="plain" id="refresh" title="Refresh ports" aria-label="Refresh ports">↻</button>
         </div>
       </div>
-      <div class="row">
+      <div class="row serial-only">
         <div class="label">Speed<small>Must match the controller's firmware.</small></div>
         <select id="baud"></select>
+      </div>
+      <div class="row wled-only">
+        <div class="label">WLED address<small>IP address or name, e.g. 192.168.1.50 or wled.local. In WLED, the LED count must match the layout above.</small></div>
+        <input type="text" id="wledHost" placeholder="192.168.1.50" spellcheck="false" autocomplete="off">
       </div>
       <div class="row">
         <div class="label" style="display:flex; align-items:baseline; gap:6px"><span class="dot" id="dot"></span><span id="statusText"></span></div>
@@ -94,11 +163,33 @@
       </div>
     </div>
 
+    <h2>Keyboard shortcuts</h2>
+    <div class="group">
+      <div class="row">
+        <label for="shortcuts">Use keyboard shortcuts (work in any app)</label>
+        <label class="switch"><input type="checkbox" id="shortcuts"><span></span></label>
+      </div>
+      <div class="row"><span class="label">Lights on / off</span><span class="kbd" data-key="L"></span></div>
+      <div class="row"><span class="label">Next mode</span><span class="kbd" data-key="M"></span></div>
+      <div class="row"><span class="label">Brighter / dimmer</span><span class="kbd" data-key="↑ / ↓"></span></div>
+    </div>
+
     <h2>General</h2>
     <div class="group">
       <div class="row">
         <label for="autostart">Start at login</label>
         <label class="switch"><input type="checkbox" id="autostart"><span></span></label>
+      </div>
+      <div class="row">
+        <label for="autoUpdate">Check for updates automatically</label>
+        <label class="switch"><input type="checkbox" id="autoUpdate"><span></span></label>
+      </div>
+      <div class="row">
+        <span class="label secondary" id="updateStatus"></span>
+        <div class="controls">
+          <button class="button hidden" id="installUpdate">Install</button>
+          <button class="button" id="checkUpdate">Check now</button>
+        </div>
       </div>
     </div>
 

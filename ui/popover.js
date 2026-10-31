@@ -1,4 +1,4 @@
-import { $, invoke, listen, permissionHint, saveConfig, summarize } from "./common.js";
+import { $, invoke, isMac, listen, permissionHint, saveConfig, summarize } from "./common.js";
 
 const SWATCHES = [
   { r: 1, g: 0.55, b: 0.2 }, // warm white
@@ -15,6 +15,7 @@ const SWATCHES = [
 
 let config;
 let status;
+let available = null; // update info, when a newer release exists
 
 const sameColor = (a, b) => Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b) < 0.01;
 
@@ -30,7 +31,15 @@ function render() {
     b.classList.toggle("selected", b.dataset.mode === config.mode);
     b.disabled = !config.enabled;
   }
-  $("swatches").classList.toggle("hidden", config.mode !== "color");
+  const effectMode = config.mode === "effect";
+  $("effect").classList.toggle("hidden", !effectMode);
+  for (const b of $("effect").children) {
+    b.classList.toggle("selected", b.dataset.effect === config.effect);
+    b.disabled = !config.enabled;
+  }
+  // Color mode and the Breathing effect both use the chosen color.
+  const usesColor = config.mode === "color" || (effectMode && config.effect === "breathing");
+  $("swatches").classList.toggle("hidden", !usesColor);
   for (const [i, b] of [...$("swatches").children].entries()) {
     b.classList.toggle("selected", sameColor(SWATCHES[i], config.color));
     b.disabled = !config.enabled;
@@ -38,6 +47,9 @@ function render() {
   const brightness = $("brightness");
   if (document.activeElement !== brightness) brightness.value = Math.round(config.brightness * 100);
   brightness.disabled = !config.enabled;
+  $("shortcutHint").textContent = config.shortcuts ? (isMac ? "⌃⌥L on/off" : "Ctrl+Alt+L on/off") : "";
+  $("update").classList.toggle("hidden", !available);
+  if (available && !$("installUpdate").disabled) $("updateText").textContent = `Ambilight ${available.version} is available`;
   renderStatus();
 }
 
@@ -57,6 +69,7 @@ function fit() {
 function bind() {
   $("enabled").addEventListener("change", (e) => update({ enabled: e.target.checked }));
   for (const b of $("mode").children) b.addEventListener("click", () => update({ mode: b.dataset.mode }));
+  for (const b of $("effect").children) b.addEventListener("click", () => update({ effect: b.dataset.effect }));
   for (const color of SWATCHES) {
     const b = document.createElement("button");
     b.style.background = `rgb(${color.r * 255}, ${color.g * 255}, ${color.b * 255})`;
@@ -66,6 +79,16 @@ function bind() {
   }
   $("brightness").addEventListener("input", (e) => update({ brightness: e.target.value / 100 }));
   $("permissionButton").addEventListener("click", () => invoke("open_permission_settings"));
+  $("installUpdate").addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    $("updateText").textContent = `Installing ${available.version}…`;
+    try {
+      await invoke("install_update"); // restarts the app when done
+    } catch (err) {
+      $("updateText").textContent = `Update failed: ${err}`;
+      e.target.disabled = false;
+    }
+  });
   $("settings").addEventListener("click", () => invoke("open_settings"));
   $("quit").addEventListener("click", () => invoke("quit"));
   document.addEventListener("keydown", (e) => {
@@ -74,11 +97,12 @@ function bind() {
 }
 
 async function init() {
-  ({ config, status } = await invoke("get_state"));
+  ({ config, status, update: available } = await invoke("get_state"));
   bind();
   render();
   listen("status", (e) => { status = e.payload; renderStatus(); });
   listen("config", (e) => { config = e.payload; render(); });
+  listen("update", (e) => { available = e.payload; render(); });
 }
 
 init();

@@ -1,9 +1,12 @@
 // No console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod shortcuts;
 mod store;
+mod updates;
 mod windows;
 
+use ambilight_core::capture::DisplayInfo;
 use ambilight_core::foreground::{StreamingService, STREAMING_SERVICES};
 use ambilight_core::layout::{self, Side};
 use ambilight_core::serial::{self, PortInfo};
@@ -15,10 +18,23 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
-struct AppState {
+pub struct AppState {
     engine: Engine,
-    config: Mutex<Config>,
+    pub config: Mutex<Config>,
     store: store::Store,
+    pub update: Mutex<Option<updates::UpdateInfo>>,
+}
+
+/// Saves `config`, hands it to the engine and tells every window.
+pub fn apply_config(app: &AppHandle, config: Config) {
+    let state = app.state::<AppState>();
+    let shortcuts_changed = std::mem::replace(&mut *state.config.lock(), config.clone()).shortcuts != config.shortcuts;
+    state.store.save(&config);
+    state.engine.set_config(config.clone());
+    if shortcuts_changed {
+        shortcuts::sync(app, config.shortcuts);
+    }
+    let _ = app.emit("config", config);
 }
 
 #[derive(Serialize)]
@@ -26,19 +42,44 @@ struct Snapshot {
     config: Config,
     status: Status,
     version: &'static str,
+    update: Option<updates::UpdateInfo>,
+    platform: &'static str,
 }
 
 #[tauri::command]
 fn get_state(state: State<AppState>) -> Snapshot {
-    Snapshot { config: state.config.lock().clone(), status: state.engine.status(), version: env!("CARGO_PKG_VERSION") }
+    Snapshot {
+        config: state.config.lock().clone(),
+        status: state.engine.status(),
+        version: env!("CARGO_PKG_VERSION"),
+        update: state.update.lock().clone(),
+        platform: std::env::consts::OS,
+    }
 }
 
 #[tauri::command]
-fn set_config(app: AppHandle, state: State<AppState>, config: Config) {
-    *state.config.lock() = config.clone();
-    state.store.save(&config);
-    state.engine.set_config(config.clone());
-    let _ = app.emit("config", config);
+fn set_config(app: AppHandle, config: Config) {
+    apply_config(&app, config);
+}
+
+#[tauri::command]
+fn test_white(state: State<AppState>) {
+    state.engine.test_white();
+}
+
+#[tauri::command]
+fn list_displays() -> Vec<DisplayInfo> {
+    capture::displays()
+}
+
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<Option<updates::UpdateInfo>, String> {
+    updates::check(&app).await
+}
+
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    updates::install(&app).await
 }
 
 #[tauri::command]
@@ -137,6 +178,8 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _, _| windows::toggle_popover(app)))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_positioner::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(shortcuts::plugin())
         .setup(|app| {
             init_logging(app);
             log::info!("Ambilight {} starting", env!("CARGO_PKG_VERSION"));
@@ -157,7 +200,10 @@ fn main() {
                 let _ = app.autolaunch().enable();
             }
 
-            app.manage(AppState { engine, config: Mutex::new(config), store });
+            let shortcuts_on = config.shortcuts;
+            app.manage(AppState { engine, config: Mutex::new(config), store, update: Mutex::new(None) });
+            shortcuts::sync(app.handle(), shortcuts_on);
+            updates::watch(app.handle().clone());
             build_tray(app.handle())?;
             windows::create_popover(app.handle())?;
             Ok(())
@@ -166,7 +212,11 @@ fn main() {
             get_state,
             set_config,
             identify,
+            test_white,
             reconnect,
+            list_displays,
+            check_update,
+            install_update,
             layout_preview,
             streaming_services,
             list_ports,

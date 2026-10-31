@@ -1,8 +1,9 @@
 //! Turns audio loudness into LED colors for Sound mode: a slowly drifting hue whose brightness
 //! follows the overall level, with a punch on bass hits and faster drift when treble is busy.
 
-use crate::audio::Bands;
+use crate::audio::{Bands, SPECTRUM_BANDS};
 use crate::config::Rgb;
+use crate::layout::Region;
 
 /// Automatic gain for one band: tracks a decaying peak so quiet films and loud music both use
 /// the full brightness range.
@@ -37,12 +38,19 @@ pub struct SoundVisualizer {
     full: Band,
     bass: Band,
     treble: Band,
+    spectrum: [Band; SPECTRUM_BANDS],
     hue: f32,
 }
 
 impl Default for SoundVisualizer {
     fn default() -> Self {
-        SoundVisualizer { full: Band::new(), bass: Band::new(), treble: Band::new(), hue: 0.6 }
+        SoundVisualizer {
+            full: Band::new(),
+            bass: Band::new(),
+            treble: Band::new(),
+            spectrum: [Band::new(); SPECTRUM_BANDS],
+            hue: 0.6,
+        }
     }
 }
 
@@ -54,7 +62,36 @@ impl SoundVisualizer {
         self.full.update(bands.full, dt);
         self.bass.update(bands.bass, dt);
         let treble = self.treble.update(bands.treble, dt);
+        for (band, rms) in self.spectrum.iter_mut().zip(bands.spectrum) {
+            band.update(rms, dt);
+        }
         self.hue = (self.hue + dt * (0.008 + 0.04 * treble)).rem_euclid(1.0);
+    }
+
+    /// Overall loudness, 0..1 after automatic gain.
+    pub fn level(&self) -> f32 {
+        self.full.value
+    }
+
+    /// Bass hit strength, 0..1 (squared so only real hits stand out).
+    pub fn punch(&self) -> f32 {
+        self.bass.value * self.bass.value
+    }
+
+    /// Spectrum along the screen edge: bass glows red at the bottom, treble violet at the top.
+    pub fn render_spectrum(&self, regions: &[Region]) -> Vec<Rgb> {
+        let last = (SPECTRUM_BANDS - 1) as f32;
+        regions
+            .iter()
+            .map(|r| {
+                let height = 1.0 - (r.y0 + r.y1) / 2.0; // 0 at the bottom, 1 at the top
+                let pos = height.clamp(0.0, 1.0) * last;
+                let i = (pos as usize).min(SPECTRUM_BANDS - 2);
+                let f = pos - i as f32;
+                let value = self.spectrum[i].value * (1.0 - f) + self.spectrum[i + 1].value * f;
+                Rgb::from_hue(height * 0.75).scale(Self::IDLE + (1.0 - Self::IDLE) * value)
+            })
+            .collect()
     }
 
     pub fn render(&self, n: usize) -> Vec<Rgb> {
@@ -93,7 +130,7 @@ mod tests {
     fn loud_bass_brightens_quickly() {
         let mut v = SoundVisualizer::default();
         for _ in 0..10 {
-            v.update(Bands { full: 0.3, bass: 0.3, treble: 0.05 }, 0.02);
+            v.update(Bands { full: 0.3, bass: 0.3, treble: 0.05, ..Default::default() }, 0.02);
         }
         assert!(brightness(&v) > 0.8, "{}", brightness(&v));
     }
@@ -102,7 +139,7 @@ mod tests {
     fn quiet_audio_is_normalized_up() {
         let mut v = SoundVisualizer::default();
         for _ in 0..200 {
-            v.update(Bands { full: 0.02, bass: 0.0, treble: 0.0 }, 0.02);
+            v.update(Bands { full: 0.02, ..Default::default() }, 0.02);
         }
         // A quiet but steady signal still drives the lights well above idle.
         assert!(brightness(&v) > 0.5, "{}", brightness(&v));

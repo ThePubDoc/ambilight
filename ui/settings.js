@@ -1,12 +1,13 @@
-import { $, fromHex, invoke, ledCount, listen, permissionHint, saveConfig, summarize, toHex } from "./common.js";
+import { $, fromHex, invoke, isMac, ledCount, listen, permissionHint, saveConfig, summarize, toHex } from "./common.js";
 
 const BAUD_RATES = [115200, 230400, 460800, 500000, 921600, 1000000, 2000000];
-const SIDES = ["top", "right", "bottom", "left"];
 
 let config;
 let status;
 let ports = [];
+let displays = [];
 let services = [];
+let available = null; // update info
 
 function update(patch) {
   config = { ...config, ...patch };
@@ -14,24 +15,67 @@ function update(patch) {
   saveConfig(config);
 }
 
+const minutesToTime = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+const timeToMinutes = (t) => {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+};
+
 function render() {
-  for (const side of SIDES) {
-    const input = document.querySelector(`[data-side="${side}"] input`);
-    if (document.activeElement !== input) input.value = config[side];
+  for (const el of document.querySelectorAll(".stepper input")) {
+    if (document.activeElement !== el) el.value = config[el.dataset.field];
   }
   $("total").textContent = `${ledCount(config)} LEDs`;
   $("start").value = config.start;
   $("direction").value = config.direction;
+
+  renderDisplays();
   $("smoothing").value = config.smoothingMs;
   $("smoothingValue").textContent = `${Math.round(config.smoothingMs)} ms`;
+  $("edgeDepth").value = config.edgeDepth;
+  $("edgeDepthValue").textContent = `${Math.round(config.edgeDepth)}%`;
   $("blackBars").checked = config.ignoreBlackBars;
   $("color").value = toHex(config.color);
+
+  for (const input of document.querySelectorAll(".wb input")) {
+    const v = Math.round(config.whiteBalance[input.dataset.channel] * 100);
+    if (document.activeElement !== input) input.value = v;
+    input.nextElementSibling.textContent = `${v}%`;
+  }
+
+  if (document.activeElement !== $("maxCurrent")) $("maxCurrent").value = config.maxCurrentA;
+  const fullWhite = (ledCount(config) * 0.061).toFixed(1);
+  $("powerEstimate").textContent = config.maxCurrentA > 0
+    ? `Full white would draw about ${fullWhite} A; Ambilight keeps it under ${(config.maxCurrentA * 0.9).toFixed(1)} A.`
+    : `Full white would draw about ${fullWhite} A at 100% brightness.`;
+
+  $("autoSwitchMode").value = config.autoSwitchMode;
+  for (const box of $("services").querySelectorAll("input")) box.checked = config.autoSwitchServices.includes(box.value);
+
+  $("scheduleOn").checked = config.schedule.enabled;
+  $("scheduleFrom").value = minutesToTime(config.schedule.from);
+  $("scheduleUntil").value = minutesToTime(config.schedule.until);
+  $("scheduleDim").value = String(config.schedule.dimTo);
+  for (const id of ["scheduleFrom", "scheduleUntil", "scheduleDim"]) $(id).disabled = !config.schedule.enabled;
+
+  $("output").value = config.output;
+  for (const el of document.querySelectorAll(".serial-only")) el.classList.toggle("hidden", config.output !== "serial");
+  for (const el of document.querySelectorAll(".wled-only")) el.classList.toggle("hidden", config.output !== "wled");
   renderPorts();
   $("baud").value = String(config.baud);
-  for (const box of $("services").querySelectorAll("input")) box.checked = config.autoSwitchServices.includes(box.value);
-  $("autoSwitchMode").value = config.autoSwitchMode;
+  if (document.activeElement !== $("wledHost")) $("wledHost").value = config.wledHost;
+
+  $("shortcuts").checked = config.shortcuts;
+  $("autoUpdate").checked = config.autoUpdate;
   renderStatus();
   drawPreview();
+}
+
+function renderDisplays() {
+  const select = $("display");
+  const options = [new Option("Main display", "0"), ...displays.map((d) => new Option(d.label + (d.main ? " — main" : ""), String(d.id)))];
+  select.replaceChildren(...options);
+  select.value = displays.some((d) => d.id === config.display) ? String(config.display) : "0";
 }
 
 function renderPorts() {
@@ -51,6 +95,11 @@ function renderStatus() {
   $("permissionRow").classList.toggle("hidden", !s.needsPermission);
   $("permissionTitle").textContent = s.needsPermission === "audio" ? "System Audio Recording permission" : "Screen Recording permission";
   $("permissionHint").textContent = `${permissionHint(s.needsPermission)} No restart needed.`;
+}
+
+function renderUpdate(text) {
+  $("updateStatus").textContent = text ?? (available ? `Ambilight ${available.version} is available.` : "");
+  $("installUpdate").classList.toggle("hidden", !available);
 }
 
 /** Screen outline with one dot per LED, hue following wiring order, LED 1 ringed. */
@@ -108,14 +157,16 @@ async function drawPreview() {
 
 function buildSteppers() {
   for (const el of document.querySelectorAll(".stepper")) {
-    const side = el.dataset.side;
-    const minus = Object.assign(document.createElement("button"), { textContent: "−", ariaLabel: `Fewer ${side} LEDs` });
-    const plus = Object.assign(document.createElement("button"), { textContent: "+", ariaLabel: `More ${side} LEDs` });
-    const input = Object.assign(document.createElement("input"), { type: "number", min: 0, max: 500 });
-    input.setAttribute("aria-label", `${side} LEDs`);
-    const set = (v) => update({ [side]: Math.max(0, Math.min(500, Math.round(Number(v) || 0))) });
-    minus.addEventListener("click", () => set(config[side] - 1));
-    plus.addEventListener("click", () => set(config[side] + 1));
+    const field = el.dataset.field;
+    const min = Number(el.dataset.min ?? 0);
+    const minus = Object.assign(document.createElement("button"), { textContent: "−", ariaLabel: "Less" });
+    const plus = Object.assign(document.createElement("button"), { textContent: "+", ariaLabel: "More" });
+    const input = Object.assign(document.createElement("input"), { type: "number", min, max: 500 });
+    input.dataset.field = field;
+    input.setAttribute("aria-label", field);
+    const set = (v) => update({ [field]: Math.max(min, Math.min(500, Math.round(Number(v) || 0))) });
+    minus.addEventListener("click", () => set(config[field] - 1));
+    plus.addEventListener("click", () => set(config[field] + 1));
     input.addEventListener("change", () => set(input.value));
     el.append(minus, input, plus);
   }
@@ -146,22 +197,72 @@ function buildServices() {
 function bind() {
   buildSteppers();
   buildServices();
-  $("autoSwitchMode").addEventListener("change", (e) => update({ autoSwitchMode: e.target.value }));
-  $("baud").replaceChildren(...BAUD_RATES.map((b) => new Option(`${b.toLocaleString()} baud`, String(b))));
+  const prefix = isMac ? "⌃⌥" : "Ctrl+Alt+";
+  for (const el of document.querySelectorAll(".kbd")) el.textContent = prefix + el.dataset.key;
+
   $("start").addEventListener("change", (e) => update({ start: e.target.value }));
   $("direction").addEventListener("change", (e) => update({ direction: e.target.value }));
   $("identify").addEventListener("click", () => invoke("identify"));
+
+  $("display").addEventListener("change", (e) => update({ display: Number(e.target.value) }));
   $("smoothing").addEventListener("input", (e) => update({ smoothingMs: Number(e.target.value) }));
+  $("edgeDepth").addEventListener("input", (e) => update({ edgeDepth: Number(e.target.value) }));
   $("blackBars").addEventListener("change", (e) => update({ ignoreBlackBars: e.target.checked }));
   $("color").addEventListener("input", (e) => update({ color: fromHex(e.target.value) }));
+
+  for (const input of document.querySelectorAll(".wb input")) {
+    input.addEventListener("input", () =>
+      update({ whiteBalance: { ...config.whiteBalance, [input.dataset.channel]: Number(input.value) / 100 } }));
+  }
+  $("wbReset").addEventListener("click", () => update({ whiteBalance: { r: 1, g: 1, b: 1 } }));
+  $("testWhite").addEventListener("click", () => invoke("test_white"));
+
+  $("maxCurrent").addEventListener("change", (e) => update({ maxCurrentA: Math.max(0, Number(e.target.value) || 0) }));
+
+  $("autoSwitchMode").addEventListener("change", (e) => update({ autoSwitchMode: e.target.value }));
+
+  const schedule = (patch) => update({ schedule: { ...config.schedule, ...patch } });
+  $("scheduleOn").addEventListener("change", (e) => schedule({ enabled: e.target.checked }));
+  $("scheduleFrom").addEventListener("change", (e) => e.target.value && schedule({ from: timeToMinutes(e.target.value) }));
+  $("scheduleUntil").addEventListener("change", (e) => e.target.value && schedule({ until: timeToMinutes(e.target.value) }));
+  $("scheduleDim").addEventListener("change", (e) => schedule({ dimTo: Number(e.target.value) }));
+
+  $("output").addEventListener("change", (e) => update({ output: e.target.value }));
+  $("baud").replaceChildren(...BAUD_RATES.map((b) => new Option(`${b.toLocaleString()} baud`, String(b))));
   $("port").addEventListener("change", (e) => update({ port: e.target.value }));
   $("refresh").addEventListener("click", refreshPorts);
   $("baud").addEventListener("change", (e) => update({ baud: Number(e.target.value) }));
+  $("wledHost").addEventListener("change", (e) => update({ wledHost: e.target.value.trim() }));
   $("reconnect").addEventListener("click", () => invoke("reconnect"));
   $("permission").addEventListener("click", () => invoke("open_permission_settings"));
+
+  $("shortcuts").addEventListener("change", (e) => update({ shortcuts: e.target.checked }));
   $("autostart").addEventListener("change", async (e) => {
     e.target.checked = await invoke("set_autostart", { enabled: e.target.checked });
   });
+  $("autoUpdate").addEventListener("change", (e) => update({ autoUpdate: e.target.checked }));
+  $("checkUpdate").addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    renderUpdate("Checking…");
+    try {
+      available = await invoke("check_update");
+      renderUpdate(available ? undefined : "You're up to date.");
+    } catch (err) {
+      renderUpdate(`Couldn't check for updates: ${err}`);
+    }
+    e.target.disabled = false;
+  });
+  $("installUpdate").addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    renderUpdate(`Installing ${available.version}… Ambilight restarts when it's done.`);
+    try {
+      await invoke("install_update");
+    } catch (err) {
+      renderUpdate(`Update failed: ${err}`);
+      e.target.disabled = false;
+    }
+  });
+
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawPreview);
   window.addEventListener("resize", drawPreview);
 }
@@ -173,15 +274,18 @@ async function refreshPorts() {
 
 async function init() {
   const state = await invoke("get_state");
-  ({ config, status } = state);
+  ({ config, status, update: available } = state);
   services = await invoke("streaming_services");
+  displays = await invoke("list_displays");
+  ports = await invoke("list_ports");
   $("footer").textContent = `Ambilight ${state.version} · MIT License · github.com/ThePubDoc/ambilight`;
   bind();
-  ports = await invoke("list_ports");
   $("autostart").checked = await invoke("get_autostart");
   render();
+  renderUpdate();
   listen("status", (e) => { status = e.payload; renderStatus(); });
   listen("config", (e) => { config = e.payload; render(); });
+  listen("update", (e) => { available = e.payload; renderUpdate(); });
 }
 
 init();
