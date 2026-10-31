@@ -1,0 +1,45 @@
+name: Hardware report
+description: Tell us which strip, controller and OS you use, whether it works or not
+labels: [hardware report]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks! Reports like this help others pick parts that work.
+  - type: dropdown
+    id: works
+    attributes:
+      label: Does it work?
+      options: [Works well, Works with problems, Doesn't work]
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 15.3 (Apple silicon) / Windows 11"
+    validations:
+      required: true
+  - type: input
+    id: controller
+    attributes:
+      label: Controller and firmware
+      placeholder: "Arduino Nano clone (CH340), FastLED Adalight sketch / ESP32 with WLED 0.15"
+    validations:
+      required: true
+  - type: input
+    id: strip
+    attributes:
+      label: LED strip
+      placeholder: "WS2812B, 60 LEDs/m, 139 LEDs, 5 V 10 A supply"
+    validations:
+      required: true
+  - type: input
+    id: settings
+    attributes:
+      label: Ambilight settings
+      placeholder: "USB at 1,000,000 baud; 49/21/48/21 LEDs; LED 1 bottom right, anticlockwise"
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Anything that needed tweaking, problems you hit, a photo of your setup…

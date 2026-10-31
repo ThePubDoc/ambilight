@@ -1,8 +1,48 @@
-# Ambilight
+<p align="center">
+  <img src="icons/app-icon.png" width="112" alt="Ambilight icon">
+</p>
 
-Screen-synced lighting for your monitor. Ambilight reads the edges of your screen and mirrors them onto an LED strip stuck to the back of the display, for macOS and Windows.
+<h1 align="center">Ambilight</h1>
 
-<p align="center"><img src="icons/app-icon.png" width="128" alt="Ambilight icon"></p>
+<p align="center">
+  <b>Screen-synced LED lighting for your monitor.</b><br>
+  A tiny, open-source menu bar app for macOS and Windows that mirrors your screen, music and movies onto the LED strip behind your display.
+</p>
+
+<p align="center">
+  <a href="https://github.com/ThePubDoc/ambilight/releases/latest"><img src="https://img.shields.io/github/v/release/ThePubDoc/ambilight?label=download&color=0a84ff" alt="Latest release"></a>
+  <a href="https://github.com/ThePubDoc/ambilight/releases"><img src="https://img.shields.io/github/downloads/ThePubDoc/ambilight/total?color=30d158" alt="Downloads"></a>
+  <a href="https://github.com/ThePubDoc/ambilight/actions/workflows/ci.yml"><img src="https://github.com/ThePubDoc/ambilight/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey" alt="macOS and Windows">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/ThePubDoc/ambilight" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/ThePubDoc/ambilight/releases/latest"><b>Download for macOS or Windows</b></a>
+  &nbsp;·&nbsp; <a href="#quick-start">Quick start</a>
+  &nbsp;·&nbsp; <a href="#faq">FAQ</a>
+</p>
+
+<!-- DEMO: a 15–30 s video of the strip following a movie scene and pulsing to music goes here.
+     To add it, edit this file on github.com and drag the .mp4 into the editor; GitHub turns it into an embedded player. -->
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/popover-dark.png">
+    <img src="docs/popover-light.png" width="380" alt="The Ambilight panel in the macOS menu bar: on/off switch, Screen, Mix, Sound, Color and Effect modes, and brightness">
+  </picture>
+</p>
+
+## Why Ambilight
+
+- **Native and tiny.** A menu bar / tray app: a 5 MB download, about 10 MB installed. No web UI, no local server, no Raspberry Pi.
+- **Set up in minutes.** Count your LEDs per side, pick the corner the strip starts at, and check it with **Identify LEDs**. A live preview shows exactly where each LED looks.
+- **Follows music, not just the screen.** Tempo-aware beat tracking pulses with the song, and **Mix** mode combines the screen's colors with the beat for games and music videos.
+- **Works alongside Netflix.** Streaming sites black out video while the screen is captured. Ambilight notices Netflix, Prime Video, Disney+ and others, and follows the soundtrack instead, so the video keeps playing.
+- **Uses the hardware you have.** Any Adalight USB controller (Arduino, ESP8266/ESP32), or a WLED controller over Wi-Fi.
+
+<details>
+<summary><b>All features</b></summary>
 
 - **Lives in the menu bar / system tray.** One click opens a small panel: on/off, mode, brightness. No browser, no local web server.
 - **Five modes.** **Screen** follows what's on the display. **Mix** uses the screen's colors but pulses with the audio, which is great for games and music videos. **Sound** follows the music or movie you're playing. **Color** holds one color (ten presets or any custom color). **Effect** plays an animation: Rainbow, Spectrum (bass glows along the bottom, treble across the top), Breathing, Candle or Aurora.
@@ -18,7 +58,56 @@ Screen-synced lighting for your monitor. Ambilight reads the edges of your scree
 - **Multiple displays.** Pick which monitor to follow.
 - **Updates itself.** Checks GitHub for new releases and installs them in one click.
 - **Recovers by itself.** Reconnects when the USB cable is unplugged and plugged back in, restarts capture after the computer sleeps, and turns the strip off when the app quits (and, on macOS, while the display sleeps).
-- **Small and light.** About 7 MB. The screen is captured at low resolution (about 320 px wide on macOS, a GPU-downscaled frame on Windows), so it barely uses the CPU.
+- **Small and light.** A 5 MB download. The screen is captured at low resolution (about 320 px wide on macOS, a GPU-downscaled frame on Windows), so it barely uses the CPU.
+
+</details>
+
+## Quick start
+
+1. **Download** the latest release for [macOS or Windows](https://github.com/ThePubDoc/ambilight/releases/latest) and install it (first launch on macOS: right-click → **Open**; see [Install](#install)).
+2. **Plug in** your controller and power the strip. Ambilight finds the USB port by itself.
+3. **Open Settings…** from the panel, enter your LEDs per side, the corner where LED 1 sits and the direction, set the speed to your firmware's baud rate, and click **Identify LEDs** to check.
+
+That's it. Pick a mode in the panel; the rest of this page covers the details.
+
+## How it compares
+
+[Hyperion.ng](https://github.com/hyperion-project/hyperion.ng) is the established open-source ambilight and does far more: Raspberry Pi installs, HDMI/USB video grabbers, dozens of LED device types, a JSON API and Home Assistant integration. Ambilight is for the common desktop case: one strip behind one computer monitor.
+
+| | Ambilight | Hyperion.ng |
+|---|---|---|
+| Setup and controls | Menu bar / tray panel and a settings window | Web interface in the browser |
+| App size (macOS) | ~10 MB installed | ~85 MB installed |
+| Music | Beat tracking, Sound and Mix modes | Audio effects (via audio grabber) |
+| Netflix and other DRM video | Switches to the soundtrack automatically | Video goes black while the screen is captured (as with any screen capture) |
+| LED hardware | Adalight (USB), WLED (Wi-Fi) | Many devices and protocols |
+| Runs on | macOS 14.2+, Windows 10/11 | Linux, Raspberry Pi, macOS, Windows |
+| HDMI capture devices | No | Yes |
+
+If you need a Raspberry Pi setup, a TV with an HDMI grabber, or exotic LED hardware, use Hyperion. If you want a strip behind your computer monitor that just works, try Ambilight.
+
+## FAQ
+
+**Why does Netflix go black with other ambilight apps, and how does Ambilight avoid it?**
+Netflix, Prime Video, Disney+ and others protect their video: while any app captures the screen, the browser shows black. Nothing can legitimately read that picture, so Ambilight detects these services from the window title and stops capturing while one is in front, following the soundtrack instead. See [Streaming video](#streaming-video).
+
+**Does it record my screen or audio?**
+No. The screen is read at about 320 px wide and reduced to one color per LED; the audio is reduced to loudness levels. Nothing is stored or sent anywhere. The only network traffic is to your WLED controller (if you use one) and checking GitHub for updates, which you can turn off.
+
+**How much CPU does it use?**
+Very little: the screen is captured at low resolution (on Windows, the GPU shrinks each frame before the CPU sees it), and the LED loop runs at 50 frames per second.
+
+**Which LED strips and controllers work?**
+Individually addressable strips (WS2812B, SK6812 and similar) driven by an Adalight-compatible USB controller or by WLED over Wi-Fi. See [What you need](#what-you-need).
+
+**Does it work with Philips Hue, Govee or Nanoleaf?**
+Not yet. Ambilight drives LED strips through Adalight or WLED.
+
+**Linux?**
+Not yet. Most of the code is cross-platform; Linux needs screen and audio capture backends (PipeWire). Contributions welcome.
+
+**Why does macOS say the app is from an unidentified developer?**
+The app isn't notarized by Apple, which needs a paid developer account. It's built from this repository by [GitHub Actions](.github/workflows/release.yml); you can also [build it yourself](#build-from-source).
 
 ## What you need
 
@@ -54,6 +143,13 @@ Windows SmartScreen may warn about an unknown publisher: click **More info → R
 > Windows support is new and hasn't been tested with real hardware yet. Reports are very welcome.
 
 ## Set up your strip
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/settings-dark.png">
+    <img src="docs/settings-light.png" width="420" alt="Ambilight settings: LED layout preview with per-side LED counts, start corner and direction">
+  </picture>
+</p>
 
 1. Plug in the controller and power the strip. Ambilight picks the first USB serial device automatically.
 2. Open **Settings…** from the panel (or right-click the tray icon).
@@ -148,7 +244,8 @@ core/            Platform-independent engine (Rust library, unit-tested)
   src/foreground.rs  Front app and window title: app profiles and the streaming switch
 src-tauri/       Desktop app: tray icon, windows, settings storage, start at login, shortcuts, updater
 ui/              Popover and settings pages (plain HTML/CSS/JS, no build step)
-tools/           Icon generation and local macOS signing helpers
+tools/           Icon generation, README screenshots and local macOS signing helpers
+docs/            Screenshots and the social preview card (regenerate with tools/screenshots/capture.sh)
 ```
 
 ### Releasing
@@ -156,6 +253,10 @@ tools/           Icon generation and local macOS signing helpers
 Bump the version in `Cargo.toml`, `package.json` and `src-tauri/tauri.conf.json`, then push a tag like `v0.2.0`. The release workflow builds the macOS (Apple silicon and Intel) and Windows installers, plus signed update archives and `latest.json` for the in-app updater, and attaches them to a draft GitHub release. Publish the draft to ship it.
 
 The updater archives are signed with the key in the `TAURI_SIGNING_PRIVATE_KEY` repository secret; its public half is in `tauri.conf.json`. Forks that publish their own builds need their own key (`npx tauri signer generate`).
+
+## Contributing
+
+Bug reports, hardware reports ("works with my strip/controller") and pull requests are very welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and the issues labelled [good first issue](https://github.com/ThePubDoc/ambilight/labels/good%20first%20issue).
 
 ## License
 

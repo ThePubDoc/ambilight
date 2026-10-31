@@ -1,0 +1,7 @@
+/* Screenshot-only: pin the popover to its real width (browser windows can't be that narrow) and
+   give it the look of the macOS popover material. */
+html { background: transparent; }
+body.popover { width: 330px; background: rgba(246, 246, 248, 0.98); border-radius: 12px; overflow: hidden; }
+@media (prefers-color-scheme: dark) {
+  body.popover { background: rgba(40, 40, 44, 0.98); }
+}

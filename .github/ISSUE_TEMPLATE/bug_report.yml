@@ -1,0 +1,45 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Ambilight version
+      description: Shown at the bottom of the Settings window.
+      placeholder: "0.2.1"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 15.3 (Apple silicon) / Windows 11 23H2"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options: [Screen, Mix, Sound, Color, Effect, Not mode-specific]
+  - type: input
+    id: hardware
+    attributes:
+      label: Controller and strip
+      placeholder: "Arduino Nano (CH340), Adalight sketch at 1,000,000 baud, 139 × WS2812B"
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: |
+        Paste the end of the log, or attach the file.
+        macOS: `~/Library/Logs/com.thepubdoc.ambilight/ambilight.log`
+        Windows: `%LOCALAPPDATA%\com.thepubdoc.ambilight\logs\ambilight.log`
+      render: text
