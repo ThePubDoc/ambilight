@@ -367,17 +367,9 @@ impl Worker {
         }
     }
 
+    /// Tracks the front window in every mode, so switching to a screen mode from the panel
+    /// (while Ambilight itself is in front) already knows a streaming service is behind it.
     fn watch_foreground(&mut self) {
-        let watching = !self.config.app_profiles.is_empty()
-            || (!self.config.auto_switch_services.is_empty() && self.config.mode.captures_screen());
-        if !watching {
-            if self.front_app.is_some() || self.front_title.is_some() {
-                self.front_app = None;
-                self.front_title = None;
-                self.resolve();
-            }
-            return;
-        }
         if Instant::now() < self.next_foreground_check {
             return;
         }
