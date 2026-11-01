@@ -1,4 +1,4 @@
-import { $, invoke, isMac, listen, permissionHint, saveConfig, summarize } from "./common.js";
+import { $, effectiveMode, invoke, isMac, listen, permissionHint, saveConfig, summarize } from "./common.js";
 
 const SWATCHES = [
   { r: 1, g: 0.55, b: 0.2 }, // warm white
@@ -53,7 +53,23 @@ function render() {
   renderStatus();
 }
 
+/**
+ * The sound style picker: in Sound mode, and in Mix (or Screen while it has switched over), whose
+ * streaming fallback follows the soundtrack with the same style.
+ */
+function renderSoundProfile() {
+  const following = config.mode === "sound" || effectiveMode(config, status) === "sound";
+  const fallback = config.mode === "screenSound" && config.autoSwitchMode === "sound";
+  $("soundProfile").classList.toggle("hidden", !following && !fallback);
+  $("soundProfileCaption").classList.toggle("hidden", config.mode === "sound" || (!following && !fallback));
+  for (const b of $("soundProfile").children) {
+    b.classList.toggle("selected", b.dataset.profile === config.soundProfile);
+    b.disabled = !config.enabled;
+  }
+}
+
 function renderStatus() {
+  renderSoundProfile();
   const s = summarize(config, status);
   $("dot").className = `dot ${s.tone}`;
   $("statusText").textContent = s.text;
@@ -70,6 +86,7 @@ function bind() {
   $("enabled").addEventListener("change", (e) => update({ enabled: e.target.checked }));
   for (const b of $("mode").children) b.addEventListener("click", () => update({ mode: b.dataset.mode }));
   for (const b of $("effect").children) b.addEventListener("click", () => update({ effect: b.dataset.effect }));
+  for (const b of $("soundProfile").children) b.addEventListener("click", () => update({ soundProfile: b.dataset.profile }));
   for (const color of SWATCHES) {
     const b = document.createElement("button");
     b.style.background = `rgb(${color.r * 255}, ${color.g * 255}, ${color.b * 255})`;

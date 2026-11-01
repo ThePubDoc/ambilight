@@ -264,6 +264,8 @@ pub struct SoundVisualizer {
     since_beat: f32,
     /// Beat flash, 1 right on a beat and decaying quickly.
     pulse: f32,
+    /// Strength of the beat that flashed this frame, if any.
+    beat: Option<f32>,
     /// Slowly smoothed loudness, 0..1.
     calm: f32,
     hue: f32,
@@ -280,6 +282,7 @@ impl Default for SoundVisualizer {
             mid_onset: Onset::default(),
             since_beat: 1.0,
             pulse: 0.0,
+            beat: None,
             calm: 0.0,
             hue: 0.05,
             sensitivity: Sensitivity::default(),
@@ -290,7 +293,7 @@ impl Default for SoundVisualizer {
 
 impl SoundVisualizer {
     /// Dim glow shown in silence so the room isn't suddenly dark.
-    const IDLE: f32 = 0.06;
+    pub const IDLE: f32 = 0.06;
     /// Below this RMS nothing counts as a beat.
     const BEAT_GATE: f32 = 0.004;
     /// Smallest rise in log energy that counts as a kick (≈ ×3.7, so a new bass note alone rarely
@@ -346,6 +349,7 @@ impl SoundVisualizer {
                 }
             }
         };
+        self.beat = flash;
         if let Some(strength) = flash {
             self.since_beat = 0.0;
             // Borderline hits flash softly, strong ones fully.
@@ -362,6 +366,49 @@ impl SoundVisualizer {
             let target = 0.72 * centroid / (SPECTRUM_BANDS - 1) as f32; // red (bass) .. violet (treble)
             self.hue += (target - self.hue) * (1.0 - (-dt / Self::HUE_S).exp());
         }
+    }
+
+    /// Loudness, 0..1 (automatic gain, fast attack and slower release).
+    pub fn level(&self) -> f32 {
+        self.full.value
+    }
+
+    /// Loudness per frequency band, low to high, each 0..1 with its own automatic gain.
+    pub fn spectrum(&self) -> [f32; SPECTRUM_BANDS] {
+        self.spectrum.map(|b| b.value)
+    }
+
+    /// Bass (up to ~180 Hz), mids and treble (above ~1.8 kHz), each 0..1.
+    pub fn bass_mids_treble(&self) -> (f32, f32, f32) {
+        let s = self.spectrum();
+        let mean = |b: &[f32]| b.iter().sum::<f32>() / b.len() as f32;
+        (mean(&s[..2]), mean(&s[2..5]), mean(&s[5..]))
+    }
+
+    /// Slowly smoothed loudness, 0..1.
+    pub fn calm(&self) -> f32 {
+        self.calm
+    }
+
+    /// The beat pulse: 1 right on a beat, decaying quickly.
+    pub fn pulse(&self) -> f32 {
+        self.pulse
+    }
+
+    /// The strength of the beat that flashed this frame, if one did (follows the "Beat pulses"
+    /// setting).
+    pub fn beat(&self) -> Option<f32> {
+        self.beat
+    }
+
+    /// Seconds per beat, while the beat tracker is locked on a tempo.
+    pub fn beat_period(&self) -> Option<f32> {
+        self.tracker.period.filter(|_| self.tracker.locked())
+    }
+
+    /// Hue that follows the sound's character: red for bass-heavy music .. violet for bright.
+    pub fn hue(&self) -> f32 {
+        self.hue
     }
 
     /// Brightness factor for Mix mode: the screen's colors, steady between beats, boosted on them.
@@ -396,11 +443,6 @@ impl SoundVisualizer {
                 c.lerp(Rgb::WHITE, whiten).scale(value)
             })
             .collect()
-    }
-
-    #[cfg(test)]
-    fn hue(&self) -> f32 {
-        self.hue
     }
 }
 
@@ -501,7 +543,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod music {
+pub(crate) mod music {
     //! Beat detection on a synthetic song: kick drums over a continuous bassline and hi-hats,
     //! run through the real audio analysis at 48 kHz.
     use super::*;
@@ -522,6 +564,24 @@ mod music {
         snare: f32,
         distractors: f32,
     ) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+        let beat = 60.0 / bpm;
+        let mut v = SoundVisualizer::default();
+        v.set_sensitivity(sensitivity);
+        let mut beats = Vec::new();
+        let mut last_since = v.since_beat;
+        for (i, frame) in bands(bpm, seconds, bassline, snare, distractors).into_iter().enumerate() {
+            v.update(frame, TICK);
+            if v.since_beat < last_since {
+                beats.push((i + 1) as f32 * TICK);
+            }
+            last_since = v.since_beat;
+        }
+        let hits = |offset: f32| (0..(seconds / beat / 2.0) as usize).map(|k| offset + 2.0 * k as f32 * beat).collect();
+        (hits(0.0), if snare > 0.0 { hits(beat) } else { Vec::new() }, beats)
+    }
+
+    /// The song through the real audio analysis: band levels for each 20 ms frame.
+    pub fn bands(bpm: f32, seconds: f32, bassline: f32, snare: f32, distractors: f32) -> Vec<Bands> {
         let beat = 60.0 / bpm;
         let mut noise = 12345u32;
         // Distractor onsets: random times, kept at least 100 ms away from any kick or snare.
@@ -579,22 +639,15 @@ mod music {
             .collect();
 
         let sink = AudioSink::default();
-        let mut v = SoundVisualizer::default();
-        v.set_sensitivity(sensitivity);
         let per_tick = (RATE * TICK) as usize;
-        let mut beats = Vec::new();
-        let mut last_since = v.since_beat;
-        for (i, chunk) in samples.chunks(per_tick).enumerate() {
-            sink.push(&chunk[..chunk.len() / 2], 1, RATE); // ~10 ms audio buffers, like the OS delivers
-            sink.push(&chunk[chunk.len() / 2..], 1, RATE);
-            v.update(sink.take(), TICK);
-            if v.since_beat < last_since {
-                beats.push((i + 1) as f32 * TICK);
-            }
-            last_since = v.since_beat;
-        }
-        let hits = |offset: f32| (0..(seconds / beat / 2.0) as usize).map(|k| offset + 2.0 * k as f32 * beat).collect();
-        (hits(0.0), if snare > 0.0 { hits(beat) } else { Vec::new() }, beats)
+        samples
+            .chunks(per_tick)
+            .map(|chunk| {
+                sink.push(&chunk[..chunk.len() / 2], 1, RATE); // ~10 ms audio buffers, like the OS delivers
+                sink.push(&chunk[chunk.len() / 2..], 1, RATE);
+                sink.take()
+            })
+            .collect()
     }
 
     /// (share of `hits` caught, false beats per second outside `all_hits`), after 2 s of warm-up.

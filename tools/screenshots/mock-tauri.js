@@ -16,6 +16,7 @@
     whiteBalance: { r: 1, g: 0.92, b: 0.85 },
     maxCurrentA: 6,
     beatSensitivity: "low",
+    soundProfile: "glow",
     top: 49, right: 21, bottom: 48, left: 21,
     start: "bottomRight",
     direction: "anticlockwise",

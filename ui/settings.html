@@ -62,6 +62,26 @@
         <div class="controls"><input type="range" id="edgeDepth" min="2" max="25" step="1" aria-label="Edge depth"><span class="value" id="edgeDepthValue"></span></div>
       </div>
       <div class="row">
+        <div class="label">Sound style<small>How Sound mode draws the music. Styles are modelled on LedFx and WLED's audio-reactive effects.</small></div>
+        <select id="soundProfile">
+          <optgroup label="Calm">
+            <option value="glow">Glow: one color, gentle fades</option>
+            <option value="breathe">Breathe: slow breathing with the tempo</option>
+            <option value="lava">Lava: drifting blobs of color</option>
+            <option value="waves">Waves: slow waves rolling up</option>
+          </optgroup>
+          <optgroup label="Lively">
+            <option value="pulse">Pulse: one color, soft beat pulses</option>
+            <option value="energy">Energy: bass, mids, treble bars</option>
+            <option value="scroll">Scroll: colors flow around</option>
+            <option value="meter">Meter: volume with a peak dot</option>
+            <option value="spectrum">Spectrum: bass to treble</option>
+            <option value="ripple">Ripple: a ripple on each beat</option>
+            <option value="power">Power: bass swell, treble sparks</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="row">
         <div class="label">Beat pulses<small>How often Sound and Mix modes pulse with music. The first two follow the song's tempo and ignore sounds between beats, like vocals and guitars.</small></div>
         <select id="beatSensitivity">
           <option value="low">Every other beat (calm)</option>

@@ -37,6 +37,7 @@ function render() {
   $("edgeDepthValue").textContent = `${Math.round(config.edgeDepth)}%`;
   $("blackBars").checked = config.ignoreBlackBars;
   $("beatSensitivity").value = config.beatSensitivity;
+  $("soundProfile").value = config.soundProfile;
   $("color").value = toHex(config.color);
 
   for (const input of document.querySelectorAll(".wb input")) {
@@ -259,6 +260,7 @@ function bind() {
   $("edgeDepth").addEventListener("input", (e) => update({ edgeDepth: Number(e.target.value) }));
   $("blackBars").addEventListener("change", (e) => update({ ignoreBlackBars: e.target.checked }));
   $("beatSensitivity").addEventListener("change", (e) => update({ beatSensitivity: e.target.value }));
+  $("soundProfile").addEventListener("change", (e) => update({ soundProfile: e.target.value }));
   $("color").addEventListener("input", (e) => update({ color: fromHex(e.target.value) }));
 
   for (const input of document.querySelectorAll(".wb input")) {

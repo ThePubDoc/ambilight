@@ -36,8 +36,8 @@ shot() { # name url width height [dark]
     echo "docs/$1.png"
 }
 
-shot popover-dark "popover.html?mode=screenSound" 330 200 dark
-shot popover-light "popover.html?mode=screenSound" 330 200
+shot popover-dark "popover.html?mode=screenSound" 330 286 dark
+shot popover-light "popover.html?mode=screenSound" 330 286
 shot popover-effect-dark "popover.html?mode=effect&effect=aurora" 330 236 dark
 shot settings-dark "settings.html" 520 1200 dark
 shot settings-light "settings.html" 520 1200

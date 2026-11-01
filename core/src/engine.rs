@@ -11,6 +11,7 @@ use crate::output::Link;
 use crate::pixels::Pipeline;
 use crate::serial::{self, LinkError};
 use crate::sound::SoundVisualizer;
+use crate::sound_profiles::SoundProfiles;
 use chrono::Timelike;
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -149,6 +150,7 @@ struct Worker {
     audio_requested: bool,
     next_audio: Instant,
     visualizer: SoundVisualizer,
+    sound_profiles: SoundProfiles,
     effects: Effects,
 
     /// Front app and window title, as last seen (Ambilight itself excluded).
@@ -198,6 +200,7 @@ impl Worker {
             audio_requested: false,
             next_audio: now,
             visualizer: SoundVisualizer::default(),
+            sound_profiles: SoundProfiles::default(),
             effects: Effects::default(),
             front_app: None,
             front_title: None,
@@ -260,6 +263,7 @@ impl Worker {
         }
         self.sink.configure(self.regions.clone(), c.ignore_black_bars);
         self.visualizer.set_sensitivity(c.beat_sensitivity);
+        self.sound_profiles.configure(&self.regions);
         self.config = c;
         self.resolve();
         self.next_schedule_check = Instant::now();
@@ -556,8 +560,8 @@ impl Worker {
                 }
                 Mode::Sound => {
                     self.visualizer.update(self.audio_sink.take(), dt);
-                    smooth = false; // the visualizer shapes attack and release itself
-                    self.visualizer.render(n)
+                    smooth = false; // the profiles shape attack and release themselves
+                    self.sound_profiles.render(self.config.sound_profile, &self.visualizer, dt)
                 }
                 Mode::Color => vec![self.config.color; n],
                 Mode::Effect => {

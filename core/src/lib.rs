@@ -14,6 +14,7 @@ pub mod output;
 pub mod pixels;
 pub mod serial;
 pub mod sound;
+pub mod sound_profiles;
 
-pub use config::{Config, Corner, Direction, Effect, Mode, Output, Rgb, Schedule, Sensitivity};
+pub use config::{Config, Corner, Direction, Effect, Mode, Output, Rgb, Schedule, Sensitivity, SoundProfile};
 pub use engine::{CaptureState, Engine, Status};

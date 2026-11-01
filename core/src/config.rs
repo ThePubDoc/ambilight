@@ -111,6 +111,38 @@ impl Default for AppProfile {
     }
 }
 
+/// How Sound mode draws the music, modelled on well-known audio-reactive effects from LedFx and
+/// WLED's sound-reactive fork.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SoundProfile {
+    /// Calm: one color that fades gently with the loudness and the music's character, without
+    /// beats (Philips Hue Sync's "Subtle" intensity).
+    #[default]
+    Glow,
+    /// Calm: the strip slowly breathes in and out at the song's tempo, once every two bars.
+    Breathe,
+    /// Calm: soft blobs of neighbouring colors drift slowly around the screen (LedFx Lava lamp
+    /// and Melt, WLED Midnoise).
+    Lava,
+    /// Calm: slow waves roll up from the bottom, swelling with the loudness (WLED Plasmoid).
+    Waves,
+    /// One color for the whole strip that follows the loudness, with soft pulses on beats.
+    Pulse,
+    /// Bass, mids and treble as red, green and blue bars growing from the bottom (LedFx Energy).
+    Energy,
+    /// The sound's color flows from the bottom around the screen (LedFx Scroll, WLED Waterfall).
+    Scroll,
+    /// A volume meter rising up both sides, with a falling peak dot (WLED Gravimeter).
+    Meter,
+    /// Eight frequency bands from bass at the bottom to treble at the top (WLED GEQ, LedFx Bands).
+    Spectrum,
+    /// Each beat drops a ripple of color that spreads out and fades (WLED Ripple Peak).
+    Ripple,
+    /// A gradient that swells with the bass, with white sparks on the treble (LedFx Power).
+    Power,
+}
+
 /// How Sound and Mix modes flash on beats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -208,6 +240,8 @@ pub struct Config {
     pub max_current_a: f32,
     /// How often Sound and Mix modes pulse with the beat.
     pub beat_sensitivity: Sensitivity,
+    /// How Sound mode draws the music.
+    pub sound_profile: SoundProfile,
 
     pub top: u16,
     pub right: u16,
@@ -257,6 +291,7 @@ impl Default for Config {
             white_balance: Rgb::WHITE,
             max_current_a: 0.0,
             beat_sensitivity: Sensitivity::Low,
+            sound_profile: SoundProfile::Glow,
             top: 30,
             right: 15,
             bottom: 30,

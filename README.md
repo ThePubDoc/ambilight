@@ -29,7 +29,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/popover-dark.png">
-    <img src="docs/popover-light.png" width="380" alt="The Ambilight panel in the macOS menu bar: on/off switch, Screen, Mix, Sound, Color and Effect modes, and brightness">
+    <img src="docs/popover-light.png" width="380" alt="The Ambilight panel in the macOS menu bar: on/off switch, Screen, Mix, Sound, Color and Effect modes, sound styles, and brightness">
   </picture>
 </p>
 
@@ -37,7 +37,7 @@
 
 - **Native and tiny.** A menu bar / tray app: a 5 MB download, about 10 MB installed. No web UI, no local server, no Raspberry Pi.
 - **Set up in minutes.** Count your LEDs per side, pick the corner the strip starts at, and check it with **Identify LEDs**. A live preview shows exactly where each LED looks.
-- **Follows music, not just the screen.** Tempo-aware beat tracking pulses with the song, and **Mix** mode combines the screen's colors with the beat for games and music videos.
+- **Follows music, not just the screen.** Eleven [sound styles](#sound-styles), from calm fades and slow waves to beat ripples and spectrum bars, plus **Mix** mode, which combines the screen's colors with the beat for games and music videos.
 - **Works alongside Netflix.** Streaming sites black out video while the screen is captured. Ambilight notices Netflix, Prime Video, Disney+ and others, and follows the soundtrack instead, so the video keeps playing.
 - **Uses the hardware you have.** Any Adalight USB controller (Arduino, ESP8266/ESP32), or a WLED controller over Wi-Fi.
 
@@ -45,7 +45,7 @@
 <summary><b>All features</b></summary>
 
 - **Lives in the menu bar / system tray.** One click opens a small panel: on/off, mode, brightness. No browser, no local web server.
-- **Five modes.** **Screen** follows what's on the display. **Mix** uses the screen's colors but pulses with the audio, which is great for games and music videos. **Sound** follows the music or movie you're playing. **Color** holds one color (ten presets or any custom color). **Effect** plays an animation: Rainbow, Spectrum (bass glows along the bottom, treble across the top), Breathing, Candle or Aurora.
+- **Five modes.** **Screen** follows what's on the display. **Mix** uses the screen's colors but pulses with the audio, which is great for games and music videos. **Sound** follows the music or movie you're playing, in one of eleven [styles](#sound-styles): calm ones (Glow, Breathe, Lava, Waves) and lively ones (Pulse, Energy, Scroll, Meter, Spectrum, Ripple, Power). **Color** holds one color (ten presets or any custom color). **Effect** plays an animation: Rainbow, Spectrum (bass glows along the bottom, treble across the top), Breathing, Candle or Aurora.
 - **Works with Netflix and other streaming.** Streaming sites black out their video while the screen is captured, so when a Netflix, Prime Video, Disney+ (and others) window is in front, Ambilight switches to Sound mode by itself: the video stays visible and the lights follow the soundtrack. YouTube and everything else keep screen sync. See [Streaming video](#streaming-video).
 - **Fits any strip layout.** Set LEDs per side, which corner the strip starts at and which way it runs. A live preview shows the result, and **Identify LEDs** lights each side in its own color so you can check it on the real strip.
 - **Ignores black bars.** Letterboxed and pillarboxed videos use the picture area, not the bars.
@@ -180,6 +180,26 @@ Sound mode also works on its own: pick **Sound** in the panel to make the strip 
 
 Music without a clear beat (ambient, speech) just glows.
 
+### Sound styles
+
+In **Sound** mode, and in **Mix** for when it follows the soundtrack of a streaming service, the panel shows how to draw the music (also under **Settings → Picture → Sound style**). The calm styles never flash and stay below 60% brightness; the lively ones react to every beat and note. They are modelled on well-known audio-reactive effects from [LedFx](https://docs.ledfx.app) and [WLED's sound-reactive fork](https://mm.kno.wled.ge/WLEDSR/Reactive-Animations/):
+
+| Style | What it does | Inspired by |
+|---|---|---|
+| **Glow** (default, calm) | One color that fades gently with the loudness and the music's character, no beat flashes | Philips Hue Sync "Subtle" |
+| **Breathe** (calm) | The strip slowly breathes in and out at the song's tempo, once every two bars | |
+| **Lava** (calm) | Soft blobs of neighbouring colors drift slowly around the screen | LedFx Lava lamp, WLED Midnoise |
+| **Waves** (calm) | Slow waves roll up from the bottom, swelling with the loudness | WLED Plasmoid |
+| **Pulse** | One color that follows the loudness, with soft pulses on beats | |
+| **Energy** | Bass, mids and treble as red, green and blue bars growing from the bottom center | LedFx Energy |
+| **Scroll** | The sound's color enters at the bottom and flows up both sides | LedFx Scroll, WLED Waterfall |
+| **Meter** | A volume meter up both sides, green to red, with a falling peak dot | WLED Gravimeter |
+| **Spectrum** | Eight frequency bands from bass at the bottom to treble at the top | WLED GEQ, LedFx Bands |
+| **Ripple** | Each beat drops a ripple of a new color that spreads and fades | WLED Ripple Peak |
+| **Power** | A gradient that swells with the bass, with white sparks on hi-hats and cymbals | LedFx Power |
+
+Positions follow the screen, not the wiring, so every style looks the same whichever corner your strip starts in. Ripple and Pulse use the **Beat pulses** setting above.
+
 ## App profiles
 
 Under **Settings → App profiles**, pick a running app and the mode to use while it's in front: any mode, or a specific effect. For example:
@@ -240,7 +260,8 @@ core/            Platform-independent engine (Rust library, unit-tested)
   src/engine.rs    50 Hz loop: capture → smoothing → output; reconnects, sleep, schedule, auto-switch
   src/capture/     Screen capture: ScreenCaptureKit (macOS), DXGI Desktop Duplication (Windows)
   src/audio/       System-audio loudness: Core Audio process tap (macOS), WASAPI loopback (Windows)
-  src/sound.rs     Sound and Mix visuals: beat tracking, loudness glow, color
+  src/sound.rs     Sound and Mix analysis: beat tracking, loudness glow, color
+  src/sound_profiles.rs  Sound styles: calm (Glow, Breathe, Lava, Waves) and lively (Pulse, Energy, …)
   src/foreground.rs  Front app and window title: app profiles and the streaming switch
 src-tauri/       Desktop app: tray icon, windows, settings storage, start at login, shortcuts, updater
 ui/              Popover and settings pages (plain HTML/CSS/JS, no build step)
