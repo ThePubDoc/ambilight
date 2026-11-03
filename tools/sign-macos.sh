@@ -16,6 +16,12 @@ fi
 ORIG_KEYCHAINS=$(security list-keychains -d user | tr -d '"' | xargs)
 trap 'security list-keychains -d user -s $ORIG_KEYCHAINS' EXIT
 security list-keychains -d user -s $ORIG_KEYCHAINS "$KC"
-security unlock-keychain -p ambilight-local "$KC"
-codesign --force --deep --sign "Ambilight Local Signing" "$APP"
+if ! PW=$(security find-generic-password -a "$USER" -s "Ambilight signing keychain" -w 2>/dev/null); then
+    echo "The signing keychain still has the old fixed password; run tools/setup-signing.sh to replace it."
+    PW="ambilight-local"
+fi
+security unlock-keychain -p "$PW" "$KC"
+# Hardened runtime, as in releases: stops other code being injected into the app to borrow its
+# Screen Recording and System Audio permissions.
+codesign --force --deep --options runtime --sign "Ambilight Local Signing" "$APP"
 codesign -dr - "$APP" 2>&1 | tail -1
