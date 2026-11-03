@@ -131,7 +131,7 @@ function renderDisplays() {
 
 function renderPorts() {
   const select = $("port");
-  const options = [{ path: "", label: "Automatic" }, ...ports];
+  const options = [{ path: "", label: "Automatic (when one LED controller is plugged in)" }, ...ports];
   if (config.port && !ports.some((p) => p.path === config.port)) {
     options.push({ path: config.port, label: `${config.port} (not connected)` });
   }

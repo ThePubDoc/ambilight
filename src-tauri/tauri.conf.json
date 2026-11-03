@@ -45,6 +45,7 @@
   },
   "plugins": {
     "updater": {
+      "requireSignedVersion": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY0M0JDQzIwQzM4MDM1OEYKUldTUE5ZRERJTXc3WkpGbW91VjBZQTNGYkF6ZnQybmZoTU5rZUpDeXh4SHhrTFVjM3NMN3owaTAK",
       "endpoints": [
         "https://github.com/ThePubDoc/ambilight/releases/latest/download/latest.json"

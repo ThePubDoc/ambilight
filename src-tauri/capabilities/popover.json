@@ -1,0 +1,18 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "popover",
+  "description": "What the tray popover may call",
+  "windows": ["popover"],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-set-size",
+    "core:window:allow-hide",
+    "allow-get-state",
+    "allow-set-config",
+    "allow-fit-popover",
+    "allow-install-update",
+    "allow-open-permission-settings",
+    "allow-open-settings",
+    "allow-quit"
+  ]
+}

@@ -12,8 +12,15 @@ const TRAY_POSITION: Position = Position::TrayCenter;
 #[cfg(not(target_os = "macos"))]
 const TRAY_POSITION: Position = Position::TrayBottomCenter;
 
+/// The windows can call native commands, so they may only show the bundled pages
+/// (`tauri://localhost` on macOS and Linux, `http(s)://tauri.localhost` on Windows).
+fn is_app_page(url: &tauri::Url) -> bool {
+    url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost")
+}
+
 pub fn create_popover(app: &AppHandle) -> tauri::Result<()> {
     let window = WebviewWindowBuilder::new(app, POPOVER, WebviewUrl::App("popover.html".into()))
+        .on_navigation(is_app_page)
         .title("Ambilight")
         .inner_size(POPOVER_WIDTH, 300.0)
         .resizable(false)
@@ -67,6 +74,7 @@ pub fn show_settings(app: &AppHandle) {
         return;
     }
     let built = WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App("settings.html".into()))
+        .on_navigation(is_app_page)
         .title("Ambilight Settings")
         .inner_size(500.0, 720.0)
         .min_inner_size(440.0, 400.0)

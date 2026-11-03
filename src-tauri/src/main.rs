@@ -1,6 +1,7 @@
 // No console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod instance;
 mod shortcuts;
 mod store;
 mod updates;
@@ -27,6 +28,7 @@ pub struct AppState {
 
 /// Saves `config`, hands it to the engine and tells every window.
 pub fn apply_config(app: &AppHandle, config: Config) {
+    let config = config.sanitized();
     let state = app.state::<AppState>();
     let shortcuts_changed = std::mem::replace(&mut *state.config.lock(), config.clone()).shortcuts != config.shortcuts;
     state.store.save(&config);
@@ -101,7 +103,7 @@ struct Dot {
 /// Where each LED sits on the screen edge, in wiring order, for the settings preview.
 #[tauri::command]
 fn layout_preview(config: Config) -> Vec<Dot> {
-    layout::build(&config)
+    layout::build(&config.sanitized())
         .iter()
         .map(|r| {
             let (cx, cy) = ((r.x0 + r.x1) / 2.0, (r.y0 + r.y1) / 2.0);
@@ -180,13 +182,20 @@ fn init_logging(app: &tauri::App) {
 }
 
 fn main() {
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| windows::toggle_popover(app)))
+    let builder = tauri::Builder::default();
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| windows::toggle_popover(app)));
+    let app = builder
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(shortcuts::plugin())
         .setup(|app| {
+            // Before logging starts: a second copy must not truncate the running copy's log.
+            #[cfg(unix)]
+            if !instance::claim(app.handle(), &app.path().app_cache_dir()?) {
+                std::process::exit(0);
+            }
             init_logging(app);
             log::info!("Ambilight {} starting", env!("CARGO_PKG_VERSION"));
 

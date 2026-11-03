@@ -104,7 +104,11 @@ impl FrameSink {
 
     pub fn push(&self, frame: &Frame) {
         let mut s = self.state.lock();
-        if s.regions.is_empty() || frame.width == 0 || frame.height == 0 {
+        // Drop frames whose buffer can't hold width × height BGRA pixels (an unexpected pixel
+        // format or stride) instead of letting sampling index past it.
+        let fits = frame.stride >= frame.width * 4
+            && frame.data.len() >= (frame.height.saturating_sub(1)) * frame.stride + frame.width * 4;
+        if s.regions.is_empty() || frame.width == 0 || frame.height == 0 || !fits {
             return;
         }
         let insets = if s.ignore_black_bars { s.detector.detect(frame) } else { Insets::default() };

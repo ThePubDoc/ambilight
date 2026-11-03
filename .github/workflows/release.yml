@@ -24,6 +24,8 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
+    # The signing secrets live in this environment, which only v* tags may use.
+    environment: release
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -69,3 +71,6 @@ jobs:
           releaseBody: See the README for setup. macOS builds are not notarized; see "First launch on macOS".
           releaseDraft: true
           args: --target ${{ matrix.target }} --config '{"bundle":{"createUpdaterArtifacts":true}}'
+      - name: Remove the signing keychain
+        if: always() && runner.os == 'macOS'
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true

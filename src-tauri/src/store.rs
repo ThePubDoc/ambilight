@@ -21,18 +21,21 @@ impl Store {
     pub fn load(&self) -> Config {
         fs::read_to_string(self.path())
             .ok()
-            .and_then(|s| serde_json::from_str(&s).map_err(|e| log::warn!("config.json: {e}")).ok())
+            .and_then(|s| serde_json::from_str::<Config>(&s).map_err(|e| log::warn!("config.json: {e}")).ok())
             .unwrap_or_default()
+            .sanitized()
     }
 
+    /// Writes a temporary file and renames it over config.json, so a crash mid-write can't leave a
+    /// truncated file (which would load as the defaults).
     pub fn save(&self, config: &Config) {
-        match serde_json::to_string_pretty(config) {
-            Ok(json) => {
-                if let Err(e) = fs::write(self.path(), json) {
-                    log::warn!("saving config: {e}");
-                }
-            }
-            Err(e) => log::warn!("encoding config: {e}"),
+        let json = match serde_json::to_string_pretty(config) {
+            Ok(json) => json,
+            Err(e) => return log::warn!("encoding config: {e}"),
+        };
+        let tmp = self.dir.join("config.json.tmp");
+        if let Err(e) = fs::write(&tmp, json).and_then(|_| fs::rename(&tmp, self.path())) {
+            log::warn!("saving config: {e}");
         }
     }
 

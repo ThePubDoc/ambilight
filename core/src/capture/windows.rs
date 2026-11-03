@@ -264,8 +264,11 @@ impl Duplicator {
         let w = (self.width >> self.mip_level).max(1) as usize;
         let h = (self.height >> self.mip_level).max(1) as usize;
         let stride = mapped.RowPitch as usize;
-        let data = std::slice::from_raw_parts(mapped.pData as *const u8, stride * h);
-        sink.push(&Frame { width: w, height: h, stride, data });
+        if !mapped.pData.is_null() && stride >= w * 4 {
+            // D3D11 guarantees every row but the last is RowPitch long; the last only w * 4 bytes.
+            let data = std::slice::from_raw_parts(mapped.pData as *const u8, (h - 1) * stride + w * 4);
+            sink.push(&Frame { width: w, height: h, stride, data });
+        }
         self.context.Unmap(&self.staging, 0);
         Ok(())
     }

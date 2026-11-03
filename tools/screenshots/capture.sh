@@ -20,7 +20,7 @@ for page in popover settings; do
 done
 
 PORT=8765
-python3 -m http.server "$PORT" --directory "$WORK" >/dev/null 2>&1 &
+python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$WORK" >/dev/null 2>&1 &
 disown
 SERVER=$!
 sleep 1

@@ -21,7 +21,7 @@ npm run dev                      # run the app in development mode
 cargo test -p ambilight-core     # unit tests (no hardware needed)
 ```
 
-On macOS, run `tools/setup-signing.sh` once and `tools/sign-macos.sh` after each `npm run build`, so the Screen Recording permission survives rebuilds (see the README).
+On macOS, run `tools/setup-signing.sh` once (it creates your own local signing identity) and `tools/sign-macos.sh` after each `npm run build`, so the Screen Recording permission survives rebuilds (see the README).
 
 ### Where things live
 

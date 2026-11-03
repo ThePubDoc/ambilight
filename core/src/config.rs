@@ -315,9 +315,22 @@ impl Default for Config {
     }
 }
 
+/// Most LEDs per side (and gap slots) a config may ask for; the settings UI offers the same range.
+pub const MAX_SIDE_LEDS: u16 = 500;
+
 impl Config {
     pub fn led_count(&self) -> usize {
         self.top as usize + self.right as usize + self.bottom as usize + self.left as usize
+    }
+
+    /// Clamps values a hand-edited config.json could set out of range, so layout arithmetic and
+    /// the Adalight/WLED headers (16-bit LED counts) stay valid.
+    pub fn sanitized(mut self) -> Self {
+        for v in [&mut self.top, &mut self.right, &mut self.bottom, &mut self.left, &mut self.bottom_gap] {
+            *v = (*v).min(MAX_SIDE_LEDS);
+        }
+        self.brightness = self.brightness.clamp(0.0, 1.0);
+        self
     }
 }
 
@@ -331,6 +344,14 @@ mod tests {
         assert_eq!(c.top, 49);
         assert_eq!(c.right, Config::default().right);
         assert_eq!(c.white_balance, Rgb::WHITE);
+    }
+
+    #[test]
+    fn sanitized_caps_led_counts() {
+        let c: Config = serde_json::from_str(r#"{"top": 65535, "bottomGap": 65535, "brightness": 7}"#).unwrap();
+        let c = c.sanitized();
+        assert_eq!((c.top, c.bottom_gap, c.brightness), (MAX_SIDE_LEDS, MAX_SIDE_LEDS, 1.0));
+        assert_eq!(c.right, Config::default().right);
     }
 
     #[test]

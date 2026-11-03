@@ -20,6 +20,8 @@ use std::sync::Arc;
 struct Context {
     sink: Arc<AudioSink>,
     sample_rate: f32,
+    /// Channels in the tap's stream, to recognize its buffer.
+    channels: u32,
 }
 
 #[derive(Default)]
@@ -110,9 +112,11 @@ unsafe extern "C-unwind" fn io_proc(
     if list.mNumberBuffers == 0 {
         return 0;
     }
-    // Interleaved float32 in the first buffer (the tap delivers stereo).
-    let buffer = &list.mBuffers[0];
-    if !buffer.mData.is_null() {
+    // The aggregate device lists its sub-device's input streams (say a headset microphone) before
+    // the tap's, so the tap is the last buffer: interleaved float32 with the tap's channel count.
+    let buffers = std::slice::from_raw_parts(list.mBuffers.as_ptr(), list.mNumberBuffers as usize);
+    let buffer = &buffers[buffers.len() - 1];
+    if !buffer.mData.is_null() && buffer.mNumberChannels == context.channels {
         let samples = std::slice::from_raw_parts(buffer.mData as *const f32, buffer.mDataByteSize as usize / 4);
         context.sink.push(samples, buffer.mNumberChannels as usize, context.sample_rate);
     }
@@ -169,7 +173,8 @@ impl ProcessTap {
             )));
         }
 
-        let context = Box::new(Context { sink, sample_rate: format.mSampleRate as f32 });
+        let context =
+            Box::new(Context { sink, sample_rate: format.mSampleRate as f32, channels: format.mChannelsPerFrame });
         let client = &*context as *const Context as *mut c_void;
         self.context = Some(context);
         check(

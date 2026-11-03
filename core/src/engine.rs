@@ -9,7 +9,7 @@ use crate::foreground::{self, Foreground};
 use crate::layout::{self, Region, Side};
 use crate::output::Link;
 use crate::pixels::Pipeline;
-use crate::serial::{self, LinkError};
+use crate::serial;
 use crate::sound::SoundVisualizer;
 use crate::sound_profiles::SoundProfiles;
 use chrono::Timelike;
@@ -498,9 +498,9 @@ impl Worker {
         match self.config.output {
             Output::Serial => {
                 let path = if self.config.port.is_empty() {
-                    match serial::available_ports().into_iter().next() {
-                        Some(p) => p.path,
-                        None => return self.set_link(None, Some(LinkError::NotFound.to_string())),
+                    match serial::auto_port() {
+                        Ok(path) => path,
+                        Err(e) => return self.set_link(None, Some(e.to_string())),
                     }
                 } else {
                     self.config.port.clone()

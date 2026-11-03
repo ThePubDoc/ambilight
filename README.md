@@ -151,7 +151,7 @@ Windows SmartScreen may warn about an unknown publisher: click **More info → R
   </picture>
 </p>
 
-1. Plug in the controller and power the strip. Ambilight picks the first USB serial device automatically.
+1. Plug in the controller and power the strip. With **Port** set to **Automatic**, Ambilight connects when exactly one USB serial device with a common LED-controller chip (CH340, CP210x, FTDI, Arduino, Espressif) is plugged in. If you also have a 3D printer, dev board or similar connected, choose the controller under **Settings → Connection → Port**, so the LED data never goes to the wrong device.
 2. Open **Settings…** from the panel (or right-click the tray icon).
 3. Under **Connection**, set **Speed** to your firmware's baud rate.
 4. Under **LED layout**, enter the LED count for each side, the corner where LED 1 sits (the end wired to the controller), and the direction the strip runs, seen from the front of the screen.
@@ -244,7 +244,7 @@ npm run build   # installers in target/release/bundle/
 cargo test -p ambilight-core
 ```
 
-**macOS tip:** builds are ad-hoc signed, so macOS treats every rebuild as a new app and forgets the screen recording permission. Run `tools/setup-signing.sh` once to create a local self-signed certificate (in its own keychain, with a random password kept in your login keychain), then `tools/sign-macos.sh` after each `npm run build`. The permission then survives rebuilds. If you set it up before 0.2.3, run `tools/setup-signing.sh` again: older versions used a fixed password.
+**macOS tip:** builds are ad-hoc signed, so macOS treats every rebuild as a new app and forgets the screen recording permission. Run `tools/setup-signing.sh` once to create a local self-signed certificate (in its own keychain, with a random password kept in your login keychain), then `tools/sign-macos.sh` after each `npm run build`. The permission then survives rebuilds. If you set it up before 0.2.3, run `tools/setup-signing.sh` again: older versions used a fixed, published password, so it creates a new identity (macOS asks for the permissions once more). `--rotate` replaces an identity at any time.
 
 ### Project layout
 
@@ -273,11 +273,13 @@ docs/            Screenshots and the social preview card (regenerate with tools/
 
 Bump the version in `Cargo.toml`, `package.json` and `src-tauri/tauri.conf.json`, then push a tag like `v0.2.0`. The release workflow builds the macOS (Apple silicon and Intel) and Windows installers, plus signed update archives and `latest.json` for the in-app updater, and attaches them to a draft GitHub release. Publish the draft to ship it.
 
-The updater archives are signed with the key in the `TAURI_SIGNING_PRIVATE_KEY` repository secret; its public half is in `tauri.conf.json`. Forks that publish their own builds need their own key (`npx tauri signer generate`).
+The updater archives are signed with the key in the `TAURI_SIGNING_PRIVATE_KEY` secret; its public half is in `tauri.conf.json`, and the app only installs updates whose signature also covers their version (`requireSignedVersion`). Forks that publish their own builds need their own key (`npx tauri signer generate`).
 
-The macOS app is signed with a self-signed certificate from the `MACOS_SIGNING_P12` secret (a base64 `.p12`) and `MACOS_SIGNING_P12_PASSWORD`, so its signature stays the same from release to release and Screen Recording and System Audio permissions survive updates. It's the maintainer's local identity from `tools/setup-signing.sh` (exported with `security export -k ~/Library/Keychains/ambilight-signing.keychain-db -t identities -f pkcs12`), so local and release builds share permissions. It isn't an Apple Developer ID, so it doesn't replace notarization.
+The macOS app is signed with a self-signed certificate from the `MACOS_SIGNING_P12` secret (a base64 `.p12`) and `MACOS_SIGNING_P12_PASSWORD`, so its signature stays the same from release to release and Screen Recording and System Audio permissions survive updates. It's the maintainer's local identity: `tools/setup-signing.sh --export DIR` writes the `.p12` and its password once, for uploading (delete them afterwards). It isn't an Apple Developer ID, so it doesn't replace notarization.
 
-Treat that key like a password: an app signed with it as `com.thepubdoc.ambilight` would inherit the permissions users gave Ambilight. That's why the release workflow pins its third-party actions to commit hashes, and why the app uses the hardened runtime (no code can be injected into it to borrow those permissions).
+All three secrets live in the repository's `release` environment, which only `v*` tags may use, so no other workflow or branch can read them. The release job deletes its temporary keychain when it finishes.
+
+Treat that key like a password: an app signed with it as `com.thepubdoc.ambilight` would inherit the permissions users gave Ambilight. That's why the release workflow pins its third-party actions to commit hashes, and why the app uses the hardened runtime (no code can be injected into it to borrow those permissions). If the key may have leaked, run `tools/setup-signing.sh --rotate --export DIR`, update both secrets and release; users then grant the permissions once more.
 
 ## Contributing
 
