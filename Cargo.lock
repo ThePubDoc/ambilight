@@ -56,7 +56,7 @@ dependencies = [
 
 [[package]]
 name = "ambilight"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "ambilight-core",
  "env_logger",
@@ -76,7 +76,7 @@ dependencies = [
 
 [[package]]
 name = "ambilight-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "block2",
  "chrono",
