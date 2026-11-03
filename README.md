@@ -134,7 +134,7 @@ The app isn't notarized by Apple, so:
 2. **Allow screen recording:** open **System Settings → Privacy & Security → Screen & System Audio Recording**. If Ambilight is listed, switch it on. If it isn't (common for apps without an Apple Developer ID), click **+** and add it from Applications. Ambilight notices within a few seconds; no restart needed.
 3. **For Sound mode, allow system audio:** the first time Sound mode runs, macOS asks whether Ambilight may record system audio; click **Allow**. If you missed it, the same settings page has a **System Audio Recording Only** list where you can switch Ambilight on (or add it with **+**). Ambilight only measures how loud the audio is; it never records or stores it, and it doesn't use the microphone.
 
-Updating to a new version (including through the built-in updater) may require switching the permissions on again.
+Permissions carry over when you update: from 0.2.3 on, every release is signed with the same certificate, and macOS ties these permissions to the app's signature. If you're updating from 0.2.2 or earlier, macOS asks once more. If the switch already looks on but Ambilight still asks, select Ambilight in the list, remove it with **−**, then add it again with **+**.
 
 ### First launch on Windows
 
@@ -274,6 +274,8 @@ docs/            Screenshots and the social preview card (regenerate with tools/
 Bump the version in `Cargo.toml`, `package.json` and `src-tauri/tauri.conf.json`, then push a tag like `v0.2.0`. The release workflow builds the macOS (Apple silicon and Intel) and Windows installers, plus signed update archives and `latest.json` for the in-app updater, and attaches them to a draft GitHub release. Publish the draft to ship it.
 
 The updater archives are signed with the key in the `TAURI_SIGNING_PRIVATE_KEY` repository secret; its public half is in `tauri.conf.json`. Forks that publish their own builds need their own key (`npx tauri signer generate`).
+
+The macOS app is signed with a self-signed certificate from the `MACOS_SIGNING_P12` secret (a base64 `.p12`) and `MACOS_SIGNING_P12_PASSWORD`, so its signature stays the same from release to release and Screen Recording and System Audio permissions survive updates. It's the same identity `tools/setup-signing.sh` creates for local builds, so local and release builds share permissions too (export it with `security export -k ~/Library/Keychains/ambilight-signing.keychain-db -t identities -f pkcs12`). It isn't an Apple Developer ID, so it doesn't replace notarization.
 
 ## Contributing
 

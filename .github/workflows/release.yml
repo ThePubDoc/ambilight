@@ -32,9 +32,31 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # macOS ties Screen Recording and System Audio permissions to the app's signature. Signing
+      # every release with the same certificate keeps them across updates (ad-hoc signatures
+      # change with every build). It's self-signed, so it doesn't replace notarization.
+      - name: Import the macOS signing certificate
+        if: runner.os == 'macOS'
+        env:
+          P12: ${{ secrets.MACOS_SIGNING_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: |
+          KC="$RUNNER_TEMP/signing.keychain-db"
+          KC_PASSWORD=$(openssl rand -hex 16)
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security create-keychain -p "$KC_PASSWORD" "$KC"
+          security set-keychain-settings "$KC"
+          security unlock-keychain -p "$KC_PASSWORD" "$KC"
+          security import "$RUNNER_TEMP/signing.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASSWORD" "$KC" > /dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/signing.p12"
+          security find-identity -p codesigning "$KC" | grep -q "Ambilight Local Signing"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The certificate imported above (ignored on Windows).
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && 'Ambilight Local Signing' || '' }}
           # Signs the update archives that the in-app updater downloads.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
